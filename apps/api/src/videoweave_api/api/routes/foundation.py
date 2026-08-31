@@ -5,6 +5,7 @@ from videoweave_api.api.deps import get_db, get_storage
 from videoweave_api.core.config import get_settings
 from videoweave_api.infrastructure.storage.s3 import S3Storage
 from videoweave_api.schemas import (
+    AssetAccessRead,
     AssetRead,
     ProjectCreate,
     ProjectRead,
@@ -75,6 +76,23 @@ def get_asset(
         return _service(db, storage).get_asset(asset_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/assets/{asset_id}/access", response_model=AssetAccessRead)
+def get_asset_access(
+    asset_id: str,
+    db: Session = Depends(get_db),
+    storage: S3Storage = Depends(get_storage),
+) -> AssetAccessRead:
+    try:
+        return AssetAccessRead(
+            url=_service(db, storage).asset_access_url(asset_id),
+            expires_in=get_settings().s3_presign_expiry_seconds,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/projects/{project_id}/uploads", response_model=UploadInitRead, status_code=201)
