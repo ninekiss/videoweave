@@ -3,7 +3,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from videoweave_api.domain.enums import AssetStatus, MediaAssetType, UploadStatus
+from videoweave_api.domain.enums import (
+    AssetStatus,
+    JobState,
+    JobType,
+    MediaAssetType,
+    UploadStatus,
+)
 
 
 class ProjectCreate(BaseModel):
@@ -83,3 +89,26 @@ class UploadStatusRead(BaseModel):
     asset_id: str
     status: UploadStatus
     parts: list[UploadedPart]
+
+
+class KeyframeExtractionCreate(BaseModel):
+    count: int = Field(default=8, ge=1, le=24)
+
+
+class JobRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: str
+    project_id: str
+    type: JobType
+    state: JobState
+    progress: float
+    stage: str | None
+    input_asset_id: str | None
+    spec: dict[str, Any] = Field(default_factory=dict, validation_alias="spec_json")
+    result: dict[str, Any] = Field(default_factory=dict, validation_alias="result_json")
+    error: str | None
+    worker_id: str | None
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
