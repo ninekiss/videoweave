@@ -8,20 +8,22 @@ from videoweave_api.core.config import get_settings
 
 settings = get_settings()
 
-app = FastAPI(
+api = FastAPI(
     title="VideoWeave API",
     version="0.0.0",
     description="Capability-first control plane for VideoWeave.",
 )
 
-app.add_middleware(
-    CORSMiddleware,
+api.include_router(health_router)
+api.include_router(capabilities_router, prefix="/v1")
+api.include_router(foundation_router, prefix="/v1")
+
+# Keep CORS outside FastAPI's ServerErrorMiddleware so even unexpected 500
+# responses remain readable by the browser during local development.
+app = CORSMiddleware(
+    app=api,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.include_router(health_router)
-app.include_router(capabilities_router, prefix="/v1")
-app.include_router(foundation_router, prefix="/v1")
