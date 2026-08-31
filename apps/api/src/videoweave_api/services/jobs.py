@@ -6,7 +6,11 @@ from sqlalchemy.orm import Session
 from videoweave_api.db.models import Asset, Job, Shot
 from videoweave_api.domain.enums import AssetStatus, JobState, JobType, MediaAssetType
 from videoweave_api.infrastructure.jobs.queue import RedisJobQueue
-from videoweave_api.schemas import KeyframeExtractionCreate, VideoAnalysisCreate
+from videoweave_api.schemas import (
+    KeyframeExtractionCreate,
+    SceneCandidateDetectionCreate,
+    VideoAnalysisCreate,
+)
 
 
 class JobService:
@@ -60,12 +64,45 @@ class JobService:
             )
         )
 
+    def create_scene_detection(
+        self,
+        asset_id: str,
+        payload: SceneCandidateDetectionCreate,
+    ) -> Job:
+        asset = self._ready_video(asset_id)
+        return self._enqueue(
+            Job(
+                project_id=asset.project_id,
+                type=JobType.SCENE_DETECTION.value,
+                state=JobState.QUEUED.value,
+                progress=0.0,
+                stage="queued",
+                input_asset_id=asset.id,
+                spec_json={
+                    "floor_threshold": payload.floor_threshold,
+                    "detector": "ffmpeg-scdet",
+                },
+            )
+        )
+
     def create_video_analysis(
         self,
         asset_id: str,
         payload: VideoAnalysisCreate,
     ) -> Job:
         asset = self._ready_video(asset_id)
+        candidate_job_id = payload.candidate_job_id
+        if candidate_job_id is not None:
+            candidate_job = self.db.get(Job, candidate_job_id)
+            if candidate_job is None:
+                raise ValueError("candidate job not found")
+            if candidate_job.type != JobType.SCENE_DETECTION.value:
+                raise ValueError("candidate job is not scene detection")
+            if candidate_job.input_asset_id != asset.id:
+                raise ValueError("candidate job belongs to another asset")
+            if candidate_job.state != JobState.SUCCEEDED.value:
+                raise ValueError("candidate job must be SUCCEEDED")
+
         return self._enqueue(
             Job(
                 project_id=asset.project_id,
@@ -76,6 +113,7 @@ class JobService:
                 input_asset_id=asset.id,
                 spec_json={
                     "scene_threshold": payload.scene_threshold,
+                    "candidate_job_id": candidate_job_id,
                     "detector": "ffmpeg-scdet",
                 },
             )
