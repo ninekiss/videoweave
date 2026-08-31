@@ -112,15 +112,21 @@ export function createSceneCandidateJob(assetId: string, floorThreshold = 1): Pr
 
 export function createVideoAnalysisJob(
   assetId: string,
-  sceneThreshold = 10,
+  sceneThreshold?: number,
   candidateJobId?: string,
 ): Promise<Job> {
+  const manual = candidateJobId != null;
   return request<Job>(`/v1/assets/${assetId}/analysis`, {
     method: "POST",
-    body: JSON.stringify({
-      scene_threshold: sceneThreshold,
-      candidate_job_id: candidateJobId ?? null,
-    }),
+    body: JSON.stringify(
+      manual
+        ? {
+            mode: "manual",
+            scene_threshold: sceneThreshold ?? 10,
+            candidate_job_id: candidateJobId,
+          }
+        : { mode: "auto" },
+    ),
   });
 }
 

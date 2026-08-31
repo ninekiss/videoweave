@@ -9,7 +9,15 @@ from videoweave_api.core.config import Settings
 from videoweave_api.db.models import Asset, AssetLineage, Job, Shot
 from videoweave_api.domain.enums import AssetStatus, JobState, JobType, MediaAssetType
 from videoweave_api.infrastructure.media.keyframes import extract_frame, uniform_timestamps
-from videoweave_api.infrastructure.media.scenes import SceneChange, build_shots, detect_scene_changes
+from videoweave_api.infrastructure.media.scenes import (
+    SceneChange,
+    TransitionEvent,
+    automatic_scene_threshold,
+    build_shots,
+    cluster_scene_changes,
+    detect_scene_changes,
+    event_changes,
+)
 from videoweave_api.infrastructure.storage.s3 import S3Storage
 
 
@@ -132,18 +140,38 @@ class WorkerService:
         job.progress = 0.95
         self.db.commit()
 
+    @staticmethod
+    def _event_payload(event: TransitionEvent) -> dict:
+        return {
+            "timestamp": event.timestamp,
+            "score": event.score,
+            "start": event.start,
+            "end": event.end,
+            "span": round(event.span, 6),
+            "member_count": event.member_count,
+        }
+
     def _detect_scene_candidates(self, job: Job) -> None:
         source = self._source_video(job)
         floor_threshold = float(job.spec_json.get("floor_threshold", 1.0))
+        cluster_gap_frames = int(job.spec_json.get("cluster_gap_frames", 3))
 
         with TemporaryDirectory(prefix="videoweave-scenes-") as temp_dir:
             root = Path(temp_dir)
             source_path = self._download_source(source, root, job)
-            job.stage = "detecting candidates"
+            job.stage = "detecting raw candidates"
             job.progress = 0.35
             self.db.commit()
 
             changes = detect_scene_changes(source_path, floor_threshold, self.settings)
+            job.stage = "clustering transition events"
+            job.progress = 0.75
+            self.db.commit()
+            events = cluster_scene_changes(
+                changes,
+                source.fps,
+                max_gap_frames=cluster_gap_frames,
+            )
             candidates = [
                 {"timestamp": change.timestamp, "score": change.score}
                 for change in changes
@@ -151,15 +179,30 @@ class WorkerService:
             job.result_json = {
                 "detector": "ffmpeg-scdet",
                 "duration": source.duration,
+                "fps": source.fps,
                 "floor_threshold": floor_threshold,
+                "raw_candidate_count": len(candidates),
                 "candidate_count": len(candidates),
                 "candidates": candidates,
+                "transition_event_count": len(events),
+                "transition_events": [self._event_payload(event) for event in events],
+                "clustering": {
+                    "method": "fps-gap-peak",
+                    "max_gap_frames": cluster_gap_frames,
+                    "effective_fps": source.fps if source.fps and source.fps > 0 else 30.0,
+                },
             }
-            job.stage = "candidate list ready"
+            job.stage = "transition events ready"
             job.progress = 0.95
             self.db.commit()
 
-    def _analysis_changes(self, source: Asset, job: Job, threshold: float) -> list[SceneChange] | None:
+    def _candidate_events(
+        self,
+        source: Asset,
+        job: Job,
+        threshold: float,
+        cluster_gap_frames: int,
+    ) -> tuple[list[SceneChange], list[TransitionEvent], int] | None:
         candidate_job_id = job.spec_json.get("candidate_job_id")
         if not candidate_job_id:
             return None
@@ -182,7 +225,7 @@ class WorkerService:
         if not isinstance(raw_candidates, list):
             raise ValueError("candidate job result is invalid")
 
-        changes: list[SceneChange] = []
+        raw_changes: list[SceneChange] = []
         for item in raw_candidates:
             if not isinstance(item, dict):
                 continue
@@ -190,29 +233,71 @@ class WorkerService:
             score = item.get("score")
             if not isinstance(timestamp, (int, float)) or not isinstance(score, (int, float)):
                 continue
-            if float(score) >= threshold:
-                changes.append(SceneChange(timestamp=float(timestamp), score=float(score)))
-        return changes
+            raw_changes.append(SceneChange(timestamp=float(timestamp), score=float(score)))
+
+        events = cluster_scene_changes(
+            raw_changes,
+            source.fps,
+            max_gap_frames=cluster_gap_frames,
+        )
+        return event_changes(events, threshold), events, len(raw_changes)
 
     def _analyze_video(self, job: Job) -> None:
         source = self._source_video(job)
-        threshold = float(job.spec_json.get("scene_threshold", 10.0))
-        reused_changes = self._analysis_changes(source, job, threshold)
+        mode = str(job.spec_json.get("mode", "manual"))
+        cluster_gap_frames = int(job.spec_json.get("cluster_gap_frames", 3))
+        candidate_job_id = job.spec_json.get("candidate_job_id")
+        threshold: float
+        raw_changes: list[SceneChange] = []
+        events: list[TransitionEvent] = []
+        score_distribution: dict[str, float | int] = {}
 
         with TemporaryDirectory(prefix="videoweave-analysis-") as temp_dir:
             root = Path(temp_dir)
             source_path = self._download_source(source, root, job)
 
-            if reused_changes is None:
-                job.stage = "detecting scenes"
+            if mode == "auto":
+                floor_threshold = float(job.spec_json.get("floor_threshold", 1.0))
+                mad_multiplier = float(job.spec_json.get("mad_multiplier", 2.0))
+                job.stage = "detecting raw candidates"
                 job.progress = 0.12
                 self.db.commit()
-                changes = detect_scene_changes(source_path, threshold, self.settings)
-            else:
-                job.stage = "building calibrated shots"
+                raw_changes = detect_scene_changes(source_path, floor_threshold, self.settings)
+
+                job.stage = "clustering transition events"
                 job.progress = 0.16
                 self.db.commit()
-                changes = reused_changes
+                events = cluster_scene_changes(
+                    raw_changes,
+                    source.fps,
+                    max_gap_frames=cluster_gap_frames,
+                )
+                threshold, score_distribution = automatic_scene_threshold(
+                    events,
+                    floor_threshold=floor_threshold,
+                    mad_multiplier=mad_multiplier,
+                )
+                changes = event_changes(events, threshold)
+            else:
+                threshold = float(job.spec_json.get("scene_threshold", 10.0))
+                reused = self._candidate_events(source, job, threshold, cluster_gap_frames)
+                if reused is None:
+                    job.stage = "detecting scenes"
+                    job.progress = 0.12
+                    self.db.commit()
+                    raw_changes = detect_scene_changes(source_path, threshold, self.settings)
+                    events = cluster_scene_changes(
+                        raw_changes,
+                        source.fps,
+                        max_gap_frames=cluster_gap_frames,
+                    )
+                    changes = event_changes(events, threshold)
+                else:
+                    job.stage = "building calibrated shots"
+                    job.progress = 0.16
+                    self.db.commit()
+                    changes, events, raw_count = reused
+                    raw_changes = [SceneChange(timestamp=0.0, score=0.0)] * raw_count
 
             boundaries = build_shots(source.duration, changes)
             shot_results: list[dict] = []
@@ -261,6 +346,7 @@ class WorkerService:
                         "representative_timestamp": boundary.representative_timestamp,
                         "transition_score": boundary.transition_score,
                         "detector": "ffmpeg-scdet",
+                        "analysis_mode": mode,
                     },
                 )
                 self.db.add(shot)
@@ -293,19 +379,35 @@ class WorkerService:
                     }
                 )
                 job.result_json = {
+                    "mode": mode,
+                    "scene_threshold": threshold,
                     "shot_count": len(shot_results),
                     "shots": shot_results,
                     "representative_asset_ids": representative_asset_ids,
                 }
                 self.db.commit()
 
+            diagnostics = {
+                "raw_candidate_count": len(raw_changes),
+                "transition_event_count": len(events),
+                "accepted_boundary_count": len(changes),
+                "transition_events": [self._event_payload(event) for event in events],
+                "score_distribution": score_distribution,
+                "clustering": {
+                    "method": "fps-gap-peak",
+                    "max_gap_frames": cluster_gap_frames,
+                    "effective_fps": source.fps if source.fps and source.fps > 0 else 30.0,
+                },
+            }
             analysis_data = {
                 "kind": "video-structure",
                 "source_asset_id": source.id,
                 "job_id": job.id,
                 "detector": "ffmpeg-scdet",
+                "mode": mode,
                 "scene_threshold": threshold,
-                "candidate_job_id": job.spec_json.get("candidate_job_id"),
+                "candidate_job_id": candidate_job_id,
+                **diagnostics,
                 "scene_changes": [
                     {"timestamp": change.timestamp, "score": change.score} for change in changes
                 ],
@@ -331,9 +433,12 @@ class WorkerService:
                         "kind": "video-structure",
                         "source_asset_id": source.id,
                         "job_id": job.id,
+                        "mode": mode,
                         "shot_count": len(shot_results),
                         "scene_threshold": threshold,
-                        "candidate_job_id": job.spec_json.get("candidate_job_id"),
+                        "candidate_job_id": candidate_job_id,
+                        "raw_candidate_count": len(raw_changes),
+                        "transition_event_count": len(events),
                         "detector": "ffmpeg-scdet",
                     }
                 },
@@ -355,8 +460,9 @@ class WorkerService:
                     operator="video-analysis",
                     metadata_json={
                         "detector": "ffmpeg-scdet",
+                        "mode": mode,
                         "scene_threshold": threshold,
-                        "candidate_job_id": job.spec_json.get("candidate_job_id"),
+                        "candidate_job_id": candidate_job_id,
                         "shot_count": len(shot_results),
                     },
                 )
@@ -364,11 +470,14 @@ class WorkerService:
 
             job.result_json = {
                 "analysis_asset_id": analysis_asset.id,
+                "mode": mode,
+                "scene_threshold": threshold,
                 "shot_count": len(shot_results),
                 "shots": shot_results,
                 "representative_asset_ids": representative_asset_ids,
                 "scene_change_count": len(changes),
-                "candidate_job_id": job.spec_json.get("candidate_job_id"),
+                "candidate_job_id": candidate_job_id,
+                **diagnostics,
             }
             job.stage = "finalizing"
             job.progress = 0.95

@@ -80,6 +80,7 @@ class JobService:
                 input_asset_id=asset.id,
                 spec_json={
                     "floor_threshold": payload.floor_threshold,
+                    "cluster_gap_frames": 3,
                     "detector": "ffmpeg-scdet",
                 },
             )
@@ -92,6 +93,11 @@ class JobService:
     ) -> Job:
         asset = self._ready_video(asset_id)
         candidate_job_id = payload.candidate_job_id
+        mode = "manual" if candidate_job_id is not None else payload.mode
+
+        if mode == "manual" and payload.scene_threshold is None:
+            raise ValueError("manual analysis requires scene_threshold")
+
         if candidate_job_id is not None:
             candidate_job = self.db.get(Job, candidate_job_id)
             if candidate_job is None:
@@ -103,8 +109,26 @@ class JobService:
             if candidate_job.state != JobState.SUCCEEDED.value:
                 raise ValueError("candidate job must be SUCCEEDED")
             floor_threshold = float(candidate_job.result_json.get("floor_threshold", 1.0))
-            if payload.scene_threshold < floor_threshold:
+            if payload.scene_threshold is None or payload.scene_threshold < floor_threshold:
                 raise ValueError("scene threshold is below candidate floor threshold")
+
+        if mode == "auto":
+            spec = {
+                "mode": "auto",
+                "floor_threshold": 1.0,
+                "cluster_gap_frames": 3,
+                "auto_threshold_method": "median-mad",
+                "mad_multiplier": 2.0,
+                "detector": "ffmpeg-scdet",
+            }
+        else:
+            spec = {
+                "mode": "manual",
+                "scene_threshold": payload.scene_threshold,
+                "candidate_job_id": candidate_job_id,
+                "cluster_gap_frames": 3,
+                "detector": "ffmpeg-scdet",
+            }
 
         return self._enqueue(
             Job(
@@ -114,11 +138,7 @@ class JobService:
                 progress=0.0,
                 stage="queued",
                 input_asset_id=asset.id,
-                spec_json={
-                    "scene_threshold": payload.scene_threshold,
-                    "candidate_job_id": candidate_job_id,
-                    "detector": "ffmpeg-scdet",
-                },
+                spec_json=spec,
             )
         )
 

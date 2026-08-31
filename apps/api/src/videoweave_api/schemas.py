@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -100,7 +100,8 @@ class SceneCandidateDetectionCreate(BaseModel):
 
 
 class VideoAnalysisCreate(BaseModel):
-    scene_threshold: float = Field(default=10.0, ge=0.1, le=100.0)
+    mode: Literal["auto", "manual"] = "auto"
+    scene_threshold: float | None = Field(default=None, ge=0.1, le=100.0)
     candidate_job_id: str | None = None
 
 
