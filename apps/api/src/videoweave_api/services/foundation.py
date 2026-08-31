@@ -44,6 +44,12 @@ class FoundationService:
             raise LookupError("asset not found")
         return asset
 
+    def asset_access_url(self, asset_id: str) -> str:
+        asset = self.get_asset(asset_id)
+        if asset.status != AssetStatus.READY.value:
+            raise ValueError("asset is not ready")
+        return self.storage.presign_get(asset.storage_key)
+
     def initialize_upload(self, project_id: str, payload: UploadCreate) -> tuple[UploadSession, Asset]:
         self.get_project(project_id)
         asset = Asset(
