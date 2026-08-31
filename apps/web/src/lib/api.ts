@@ -1,5 +1,6 @@
 import type {
   AssetAccess,
+  Job,
   MediaAsset,
   Project,
   UploadPartAccess,
@@ -92,4 +93,20 @@ export function completeUpload(
 
 export function abortUpload(uploadSessionId: string): Promise<void> {
   return request<void>(`/v1/uploads/${uploadSessionId}`, { method: "DELETE" });
+}
+
+export function createKeyframeJob(assetId: string, count = 8): Promise<Job> {
+  return request<Job>(`/v1/assets/${assetId}/keyframes`, {
+    method: "POST",
+    body: JSON.stringify({ count }),
+  });
+}
+
+export function getJob(jobId: string): Promise<Job> {
+  return request<Job>(`/v1/jobs/${jobId}`);
+}
+
+export function listJobs(projectId?: string): Promise<Job[]> {
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  return request<Job[]>(`/v1/jobs${query}`);
 }
