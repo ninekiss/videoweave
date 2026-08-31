@@ -25,7 +25,6 @@ class Settings(BaseSettings):
     s3_force_path_style: bool = Field(default=True, validation_alias="S3_FORCE_PATH_STYLE")
     s3_presign_expiry_seconds: int = Field(default=3600, validation_alias="S3_PRESIGN_EXPIRY_SECONDS")
     s3_multipart_part_size_mb: int = Field(default=64, validation_alias="S3_MULTIPART_PART_SIZE_MB")
-    s3_manage_bucket_cors: bool = Field(default=True, validation_alias="S3_MANAGE_BUCKET_CORS")
 
     ffprobe_binary: str = Field(default="ffprobe", validation_alias="FFPROBE_BINARY")
     ffprobe_timeout_seconds: int = Field(default=30, validation_alias="FFPROBE_TIMEOUT_SECONDS")
