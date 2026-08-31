@@ -3,14 +3,16 @@
 import type { DragEvent, FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import type { Job, MediaAsset, Project } from "@videoweave/contracts";
+import type { Job, MediaAsset, Project, Shot } from "@videoweave/contracts";
 
 import { uploadVideo, type UploadProgress } from "@/features/assets/multipart-upload";
 import {
   createKeyframeJob,
   createProject,
+  createVideoAnalysisJob,
   getAssetAccess,
   getJob,
+  listAssetShots,
   listProjectAssets,
   listProjects,
 } from "@/lib/api";
@@ -44,6 +46,7 @@ function formatDuration(value: number | null): string {
 function assetSummary(asset: MediaAsset): string {
   const resolution = asset.width && asset.height ? `${asset.width}×${asset.height}` : "Unknown size";
   if (asset.type === "IMAGE") return resolution;
+  if (asset.type === "ANALYSIS") return "Video structure analysis";
   const fps = asset.fps ? `${asset.fps.toFixed(2)} FPS` : "Unknown FPS";
   return `${resolution} · ${fps}`;
 }
@@ -59,6 +62,7 @@ export function ProjectsWorkspace() {
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [shots, setShots] = useState<Shot[]>([]);
   const [newProjectName, setNewProjectName] = useState("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -134,6 +138,26 @@ export function ProjectsWorkspace() {
   }, [selectedAsset]);
 
   useEffect(() => {
+    let cancelled = false;
+    setShots([]);
+    if (!selectedAsset || selectedAsset.type !== "VIDEO" || selectedAsset.status !== "READY") return;
+
+    void listAssetShots(selectedAsset.id)
+      .then((nextShots) => {
+        if (!cancelled) setShots(nextShots);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setError(cause instanceof Error ? cause.message : "Could not load shots");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAsset?.id, selectedAsset?.type, selectedAsset?.status]);
+
+  useEffect(() => {
     if (!activeJob || !isActiveJob(activeJob)) return;
 
     let cancelled = false;
@@ -143,10 +167,17 @@ export function ProjectsWorkspace() {
           if (cancelled) return;
           setActiveJob(job);
           if (job.state === "SUCCEEDED" && selectedProjectId) {
-            const assetIds = Array.isArray(job.result.asset_ids)
-              ? job.result.asset_ids.filter((value): value is string => typeof value === "string")
-              : [];
-            await refreshAssets(selectedProjectId, assetIds[0]);
+            if (job.type === "keyframe-extraction") {
+              const assetIds = Array.isArray(job.result.asset_ids)
+                ? job.result.asset_ids.filter((value): value is string => typeof value === "string")
+                : [];
+              await refreshAssets(selectedProjectId, assetIds[0]);
+            } else {
+              await refreshAssets(selectedProjectId);
+              if (job.input_asset_id) {
+                setShots(await listAssetShots(job.input_asset_id));
+              }
+            }
           }
         })
         .catch((cause: unknown) => {
@@ -208,10 +239,21 @@ export function ProjectsWorkspace() {
 
     setError(null);
     try {
-      const job = await createKeyframeJob(selectedAsset.id, 8);
-      setActiveJob(job);
+      setActiveJob(await createKeyframeJob(selectedAsset.id, 8));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not create keyframe job");
+    }
+  }
+
+  async function handleAnalyzeVideo() {
+    if (!selectedAsset || selectedAsset.type !== "VIDEO" || selectedAsset.status !== "READY") return;
+    if (isActiveJob(activeJob)) return;
+
+    setError(null);
+    try {
+      setActiveJob(await createVideoAnalysisJob(selectedAsset.id, 10));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create video analysis job");
     }
   }
 
@@ -220,6 +262,12 @@ export function ProjectsWorkspace() {
     setIsDragging(false);
     const file = event.dataTransfer.files[0];
     if (file) void handleFile(file);
+  }
+
+  function selectShotRepresentative(shot: Shot) {
+    if (!shot.representative_asset_id) return;
+    const representative = assets.find((asset) => asset.id === shot.representative_asset_id);
+    if (representative) setSelectedAsset(representative);
   }
 
   return (
@@ -399,6 +447,8 @@ export function ProjectsWorkspace() {
                   src={previewUrl}
                   style={{ display: "block", maxHeight: 360, objectFit: "contain", width: "100%" }}
                 />
+              ) : previewUrl && selectedAsset.type === "ANALYSIS" ? (
+                <a className="primary" href={previewUrl} rel="noreferrer" target="_blank">Open analysis JSON</a>
               ) : (
                 <div className="previewLoading">{selectedAsset.status === "READY" ? "Loading preview…" : selectedAsset.status}</div>
               )}
@@ -416,15 +466,26 @@ export function ProjectsWorkspace() {
             </dl>
 
             {selectedAsset.type === "VIDEO" && selectedAsset.status === "READY" ? (
-              <button
-                className="primary"
-                disabled={isActiveJob(activeJob)}
-                onClick={() => void handleExtractKeyframes()}
-                style={{ width: "100%" }}
-                type="button"
-              >
-                {isActiveJob(activeJob) ? "Extracting keyframes…" : "Extract 8 keyframes"}
-              </button>
+              <div style={{ display: "grid", gap: 8 }}>
+                <button
+                  className="primary"
+                  disabled={isActiveJob(activeJob)}
+                  onClick={() => void handleAnalyzeVideo()}
+                  style={{ width: "100%" }}
+                  type="button"
+                >
+                  {isActiveJob(activeJob) && activeJob?.type === "video-analysis" ? "Analyzing video…" : "Analyze video structure"}
+                </button>
+                <button
+                  className="primary"
+                  disabled={isActiveJob(activeJob)}
+                  onClick={() => void handleExtractKeyframes()}
+                  style={{ width: "100%" }}
+                  type="button"
+                >
+                  {isActiveJob(activeJob) && activeJob?.type === "keyframe-extraction" ? "Extracting keyframes…" : "Extract 8 keyframes"}
+                </button>
+              </div>
             ) : null}
 
             {activeJob && activeJob.input_asset_id === selectedAsset.id ? (
@@ -441,6 +502,25 @@ export function ProjectsWorkspace() {
                 </div>
                 {activeJob.error ? <p className="errorText small">{activeJob.error}</p> : null}
               </div>
+            ) : null}
+
+            {selectedAsset.type === "VIDEO" && shots.length > 0 ? (
+              <section style={{ marginTop: 18 }}>
+                <p className="eyebrow">LATEST SHOT ANALYSIS · {shots.length} SHOTS</p>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {shots.map((shot) => (
+                    <button
+                      className="projectItem"
+                      key={shot.id}
+                      onClick={() => selectShotRepresentative(shot)}
+                      type="button"
+                    >
+                      <strong>Shot {shot.index}</strong>
+                      <span>{shot.start_time.toFixed(2)}s → {shot.end_time.toFixed(2)}s · {formatDuration(shot.duration)}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
             ) : null}
 
             {typeof selectedAsset.metadata.probe_error === "string" ? (
