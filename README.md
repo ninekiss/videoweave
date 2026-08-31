@@ -8,7 +8,7 @@ VideoWeave is a capability-first video AI workbench. Models, ComfyUI workflows, 
 
 ## Status
 
-The repository is initialized as a development monorepo. The first P0 vertical slice now covers Projects, Assets, S3-compatible multipart upload/resume primitives, media registration, and ffprobe metadata extraction.
+The current P0 vertical slice is usable from the web UI: create Projects, upload video directly from the browser to S3-compatible storage with multipart/resume primitives, register Assets, preview completed media, and inspect ffprobe metadata.
 
 ## Repository layout
 
@@ -63,13 +63,15 @@ PowerShell:
 Copy-Item .env.example .env
 ```
 
+For a non-default API address, copy `apps/web/.env.example` to `apps/web/.env.local` and change `NEXT_PUBLIC_API_URL`.
+
 ### 2. Start local infrastructure
 
 ```bash
 docker compose up -d
 ```
 
-This starts PostgreSQL, Valkey, MinIO, and the MinIO console.
+This starts PostgreSQL, Valkey, MinIO, and the MinIO console. If PostgreSQL or MinIO are already managed elsewhere, point `.env` at those instances instead.
 
 ### 3. Prepare and start the API
 
@@ -91,7 +93,24 @@ pnpm install
 pnpm dev:web
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:3000`, then go to **Projects**.
+
+## Browser upload flow
+
+The Projects page now provides the real P0 asset workflow:
+
+```text
+Create Project
+→ Choose / drop video
+→ Initialize multipart upload
+→ Browser PUTs parts directly to S3 / MinIO
+→ Resume missing parts when the same file is selected again
+→ Complete upload
+→ ffprobe metadata extraction
+→ Asset preview + Inspector
+```
+
+The browser never receives S3 credentials. It only receives short-lived presigned URLs. Local development can let VideoWeave manage bucket CORS with `S3_MANAGE_BUCKET_CORS=true`; disable this when bucket CORS is managed externally.
 
 ## Current P0 API
 
@@ -104,6 +123,7 @@ GET    /v1/projects
 GET    /v1/projects/{project_id}
 GET    /v1/projects/{project_id}/assets
 GET    /v1/assets/{asset_id}
+GET    /v1/assets/{asset_id}/access
 
 POST   /v1/projects/{project_id}/uploads
 POST   /v1/uploads/{upload_session_id}/parts/{part_number}
@@ -111,8 +131,6 @@ GET    /v1/uploads/{upload_session_id}
 POST   /v1/uploads/{upload_session_id}/complete
 DELETE /v1/uploads/{upload_session_id}
 ```
-
-The upload flow is intentionally direct-to-S3: the API creates and tracks multipart sessions while clients transfer media directly to object storage. Upload completion triggers best-effort ffprobe metadata extraction.
 
 ## Testing policy during rapid validation
 
@@ -123,7 +141,7 @@ Current core tests focus on:
 - API health smoke test
 - ffprobe metadata parsing
 
-Database/S3 integration coverage will be added only where failures begin to matter to real workflows.
+Database/S3/browser integration coverage will be added only where failures begin to matter to real workflows.
 
 ## Documentation
 
