@@ -95,8 +95,13 @@ class KeyframeExtractionCreate(BaseModel):
     count: int = Field(default=8, ge=1, le=24)
 
 
+class SceneCandidateDetectionCreate(BaseModel):
+    floor_threshold: float = Field(default=1.0, ge=0.1, le=20.0)
+
+
 class VideoAnalysisCreate(BaseModel):
-    scene_threshold: float = Field(default=10.0, ge=0.0, le=100.0)
+    scene_threshold: float = Field(default=10.0, ge=0.1, le=100.0)
+    candidate_job_id: str | None = None
 
 
 class JobRead(BaseModel):
