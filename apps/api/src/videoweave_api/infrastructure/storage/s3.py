@@ -35,22 +35,6 @@ class S3Storage:
         except ClientError:
             self.client.create_bucket(Bucket=self.bucket)
 
-        if self.settings.s3_manage_bucket_cors:
-            self.client.put_bucket_cors(
-                Bucket=self.bucket,
-                CORSConfiguration={
-                    "CORSRules": [
-                        {
-                            "AllowedOrigins": self.settings.cors_origin_list,
-                            "AllowedMethods": ["GET", "HEAD", "PUT"],
-                            "AllowedHeaders": ["*"],
-                            "ExposeHeaders": ["ETag"],
-                            "MaxAgeSeconds": 3600,
-                        }
-                    ]
-                },
-            )
-
     def build_asset_key(self, project_id: str, asset_id: str, filename: str) -> str:
         return f"projects/{project_id}/assets/{asset_id}/{safe_filename(filename)}"
 
