@@ -111,3 +111,27 @@ class AssetLineage(Base):
     operator: Mapped[str] = mapped_column(String(128))
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Shot(Base):
+    __tablename__ = "shots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    source_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("assets.id", ondelete="CASCADE"), index=True
+    )
+    analysis_job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"), index=True
+    )
+    index: Mapped[int] = mapped_column()
+    start_time: Mapped[float] = mapped_column(Float)
+    end_time: Mapped[float] = mapped_column(Float)
+    duration: Mapped[float] = mapped_column(Float)
+    representative_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
