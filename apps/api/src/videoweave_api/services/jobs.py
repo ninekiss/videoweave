@@ -102,6 +102,9 @@ class JobService:
                 raise ValueError("candidate job belongs to another asset")
             if candidate_job.state != JobState.SUCCEEDED.value:
                 raise ValueError("candidate job must be SUCCEEDED")
+            floor_threshold = float(candidate_job.result_json.get("floor_threshold", 1.0))
+            if payload.scene_threshold < floor_threshold:
+                raise ValueError("scene threshold is below candidate floor threshold")
 
         return self._enqueue(
             Job(
