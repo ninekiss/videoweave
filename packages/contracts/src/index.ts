@@ -36,6 +36,8 @@ export type AssetStatus =
 
 export type UploadStatus = "ACTIVE" | "COMPLETED" | "ABORTED";
 
+export type JobType = "keyframe-extraction";
+
 export type JobState =
   | "PENDING"
   | "QUEUED"
@@ -98,6 +100,29 @@ export interface UploadStatusResponse {
   asset_id: string;
   status: UploadStatus;
   parts: UploadedPart[];
+}
+
+export interface Job {
+  id: string;
+  project_id: string;
+  type: JobType;
+  state: JobState;
+  progress: number;
+  stage: string | null;
+  input_asset_id: string | null;
+  spec: Record<string, unknown>;
+  result: Record<string, unknown>;
+  error: string | null;
+  worker_id: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface KeyframeResult {
+  asset_id: string;
+  timestamp: number;
+  index: number;
 }
 
 export interface GenerationSpec {
