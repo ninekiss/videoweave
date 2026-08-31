@@ -18,9 +18,17 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Slider } from "@/components/ui/slider";
 import {
   createSceneCandidateJob,
   createVideoAnalysisJob,
@@ -335,15 +343,13 @@ export function SceneCalibrationWorkspace() {
           <CardDescription>Developer diagnostics only. Production analysis remains automatic.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <input
-            className="w-full accent-white"
+          <Slider
             disabled={candidateJob?.state !== "SUCCEEDED" || candidates.length === 0}
             max={sliderMax}
             min={sliderMin}
-            onChange={(event) => setThreshold(Number(event.target.value))}
+            onValueChange={(value) => setThreshold(value[0] ?? sliderMin)}
             step={sliderStep}
-            type="range"
-            value={Math.min(Math.max(threshold, sliderMin), sliderMax)}
+            value={[Math.min(Math.max(threshold, sliderMin), sliderMax)]}
           />
           {scoreStats ? <div className="flex justify-between text-xs text-muted-foreground"><span>{sliderMin.toFixed(2)}</span><span>{sliderMax.toFixed(2)}</span></div> : null}
 
@@ -412,18 +418,24 @@ export function SceneCalibrationWorkspace() {
 
         <Card>
           <CardContent className="grid gap-4 p-5 md:grid-cols-[minmax(160px,1fr)_minmax(220px,2fr)_auto] md:items-end">
-            <label className="grid gap-2 [&>[data-slot=native-select-wrapper]]:w-full">
-              <span className="text-xs font-medium text-muted-foreground">Project</span>
-              <NativeSelect className="w-full" disabled={projects.length === 0} onChange={(event) => setProjectId(event.target.value)} value={projectId}>
-                {projects.map((project) => <NativeSelectOption key={project.id} value={project.id}>{project.name}</NativeSelectOption>)}
-              </NativeSelect>
-            </label>
-            <label className="grid gap-2 [&>[data-slot=native-select-wrapper]]:w-full">
-              <span className="text-xs font-medium text-muted-foreground">READY video</span>
-              <NativeSelect className="w-full" disabled={assets.length === 0} onChange={(event) => setAssetId(event.target.value)} value={assetId}>
-                {assets.map((asset) => <NativeSelectOption key={asset.id} value={asset.id}>{asset.filename}</NativeSelectOption>)}
-              </NativeSelect>
-            </label>
+            <div className="grid gap-2">
+              <Label htmlFor="calibration-project">Project</Label>
+              <Select disabled={projects.length === 0} onValueChange={setProjectId} value={projectId || undefined}>
+                <SelectTrigger className="w-full" id="calibration-project"><SelectValue placeholder="Select project" /></SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="calibration-video">READY video</Label>
+              <Select disabled={assets.length === 0} onValueChange={setAssetId} value={assetId || undefined}>
+                <SelectTrigger className="w-full" id="calibration-video"><SelectValue placeholder="Select video" /></SelectTrigger>
+                <SelectContent>
+                  {assets.map((asset) => <SelectItem key={asset.id} value={asset.id}>{asset.filename}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <Button disabled={!assetId || isActive(candidateJob) || isActive(analysisJob)} onClick={() => void detectCandidates()}><ScanSearch /> {isActive(candidateJob) ? "Detecting…" : "Detect candidates"}</Button>
           </CardContent>
         </Card>
