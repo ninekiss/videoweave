@@ -3,14 +3,15 @@ import Link from "next/link";
 const navigation = [
   ["Workspace", "/"],
   ["Projects", "/projects"],
+  ["Shot Calibration", "/analysis"],
 ] as const;
 
 const quickActions = [
-  ["Generate video", "Text, image and keyframe-driven generation"],
-  ["Replicate video", "Decompose, reverse and reconstruct a reference video"],
-  ["Analyze video", "Shots, keyframes, camera, motion and quality"],
-  ["Extract keyframes", "Create temporal anchors for downstream workflows"],
-];
+  ["Generate video", "Text, image and keyframe-driven generation", null],
+  ["Replicate video", "Decompose, reverse and reconstruct a reference video", null],
+  ["Calibrate shots", "Inspect scene-change scores before generating shot assets", "/analysis"],
+  ["Extract keyframes", "Create temporal anchors for downstream workflows", "/projects"],
+] as const;
 
 export default function Home() {
   return (
@@ -35,7 +36,7 @@ export default function Home() {
             <p className="eyebrow">VIDEO AI WORKBENCH</p>
             <h1>Workspace</h1>
           </div>
-          <div className="status">Platform foundation · P0</div>
+          <div className="status">Asset + Job + Video Analysis · P0</div>
         </header>
 
         <section className="hero panel">
@@ -52,42 +53,50 @@ export default function Home() {
         <section>
           <div className="sectionTitle">
             <h2>Quick actions</h2>
-            <span className="muted">Projects and direct media upload are now live</span>
+            <span className="muted">Upload, keyframes and shot calibration are live</span>
           </div>
           <div className="grid">
-            {quickActions.map(([title, description]) => (
-              <article className="card" key={title}>
-                <div className="cardPreview" />
-                <h3>{title}</h3>
-                <p className="muted">{description}</p>
-              </article>
-            ))}
+            {quickActions.map(([title, description, href]) => {
+              const content = (
+                <>
+                  <div className="cardPreview" />
+                  <h3>{title}</h3>
+                  <p className="muted">{description}</p>
+                </>
+              );
+              return href ? (
+                <Link className="card" href={href} key={title}>{content}</Link>
+              ) : (
+                <article className="card" key={title}>{content}</article>
+              );
+            })}
           </div>
         </section>
 
         <section className="panel split">
           <div>
             <p className="eyebrow">CURRENT VERTICAL SLICE</p>
-            <h2>Project → Asset → S3</h2>
-            <p className="muted">Create a project, upload video directly to MinIO/S3, then inspect the real ffprobe metadata.</p>
+            <h2>Video → Candidates → Shots</h2>
+            <p className="muted">Detect scene-change candidates once, calibrate the threshold instantly, then create durable Shot and representative-frame assets.</p>
           </div>
           <div>
             <p className="eyebrow">INFRASTRUCTURE</p>
             <ul className="infraList">
-              <li><span /> API control plane</li>
-              <li><span /> S3-compatible assets</li>
-              <li><span /> Multipart resumable upload</li>
+              <li><span /> PostgreSQL job state</li>
+              <li><span /> Valkey worker queue</li>
+              <li><span /> S3-compatible derived assets</li>
             </ul>
           </div>
         </section>
       </section>
 
       <aside className="inspector">
-        <p className="eyebrow">NEXT</p>
-        <h2>Validate the asset flow</h2>
+        <p className="eyebrow">CURRENT CHECK</p>
+        <h2>Calibrate real footage</h2>
         <p className="muted small">
-          Open Projects, create a project, upload a real video, and verify preview plus metadata. Job/Worker comes after this UI slice is stable.
+          Use Shot Calibration on a real edited clip and compare thresholds such as 10, 7, 5 and 3 before locking a default.
         </p>
+        <Link className="primary" href="/analysis" style={{ display: "inline-block", marginTop: 12 }}>Open calibration</Link>
       </aside>
     </main>
   );
