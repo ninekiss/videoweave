@@ -81,6 +81,18 @@ class S3Storage:
     def abort_multipart_upload(self, key: str, upload_id: str) -> None:
         self.client.abort_multipart_upload(Bucket=self.bucket, Key=key, UploadId=upload_id)
 
+    def download_file(self, key: str, destination: Path) -> None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        self.client.download_file(self.bucket, key, str(destination))
+
+    def upload_file(self, source: Path, key: str, content_type: str | None = None) -> None:
+        self.ensure_bucket()
+        extra_args = {"ContentType": content_type} if content_type else None
+        if extra_args:
+            self.client.upload_file(str(source), self.bucket, key, ExtraArgs=extra_args)
+        else:
+            self.client.upload_file(str(source), self.bucket, key)
+
     def presign_get(self, key: str) -> str:
         return self.client.generate_presigned_url(
             "get_object",
