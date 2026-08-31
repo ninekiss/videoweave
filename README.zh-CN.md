@@ -8,7 +8,7 @@ VideoWeave 采用 Capability-first 架构。模型、ComfyUI Workflow、推理 R
 
 ## 当前状态
 
-仓库已经初始化为可开发的 monorepo。当前第一条 P0 Vertical Slice 已覆盖 Project、Asset、S3-compatible Multipart 上传/续传基础、媒体注册和 ffprobe 元数据提取。
+当前第一条 P0 Vertical Slice 已经可以从 Web UI 真实使用：创建 Project、浏览器直接 Multipart 上传视频到 S3-compatible Storage、恢复未完成分片、注册 Asset、预览媒体并查看 ffprobe 元数据。
 
 ## 仓库结构
 
@@ -59,13 +59,15 @@ PowerShell：
 Copy-Item .env.example .env
 ```
 
+如果 API 不是默认的 `http://localhost:8000`，把 `apps/web/.env.example` 复制成 `apps/web/.env.local`，并修改 `NEXT_PUBLIC_API_URL`。
+
 ### 2. 启动本地基础设施
 
 ```bash
 docker compose up -d
 ```
 
-会启动 PostgreSQL、Valkey、MinIO 和 MinIO Console。
+会启动 PostgreSQL、Valkey、MinIO 和 MinIO Console。如果 PostgreSQL 或 MinIO 已由你单独维护，也可以让 `.env` 指向现有实例。
 
 ### 3. 初始化并启动 API
 
@@ -87,7 +89,24 @@ pnpm install
 pnpm dev:web
 ```
 
-访问 `http://localhost:3000`。
+访问 `http://localhost:3000`，然后进入 **Projects**。
+
+## 浏览器上传流程
+
+Projects 页面现在已经接入真实 P0 Asset 流程：
+
+```text
+Create Project
+→ 选择 / 拖入视频
+→ 初始化 Multipart Upload
+→ Browser 直接 PUT 分片到 S3 / MinIO
+→ 再次选择同一个文件时恢复缺失分片
+→ Complete Upload
+→ ffprobe 元数据提取
+→ Asset Preview + Inspector
+```
+
+浏览器不会拿到 S3 凭据，只接收短时有效的 Presigned URL。本地开发默认可用 `S3_MANAGE_BUCKET_CORS=true` 让 VideoWeave 自动配置 Bucket CORS；生产环境如果由基础设施统一管理 CORS，则关闭它。
 
 ## 当前 P0 API
 
@@ -100,6 +119,7 @@ GET    /v1/projects
 GET    /v1/projects/{project_id}
 GET    /v1/projects/{project_id}/assets
 GET    /v1/assets/{asset_id}
+GET    /v1/assets/{asset_id}/access
 
 POST   /v1/projects/{project_id}/uploads
 POST   /v1/uploads/{upload_session_id}/parts/{part_number}
@@ -107,8 +127,6 @@ GET    /v1/uploads/{upload_session_id}
 POST   /v1/uploads/{upload_session_id}/complete
 DELETE /v1/uploads/{upload_session_id}
 ```
-
-上传采用 Client 直传 S3 的方式。API 只负责创建和跟踪 Multipart Session，不中转大文件；上传完成后执行 best-effort ffprobe 元数据提取。
 
 ## 快速验证阶段的测试策略
 
@@ -119,7 +137,7 @@ DELETE /v1/uploads/{upload_session_id}
 - API Health smoke test
 - ffprobe 元数据解析
 
-数据库/S3 的集成测试会在真实使用暴露出值得保护的故障点时再增加。
+数据库/S3/浏览器的集成测试会在真实使用暴露出值得保护的故障点时再增加。
 
 ## 文档
 
