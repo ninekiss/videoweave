@@ -103,10 +103,24 @@ export function createKeyframeJob(assetId: string, count = 8): Promise<Job> {
   });
 }
 
-export function createVideoAnalysisJob(assetId: string, sceneThreshold = 10): Promise<Job> {
+export function createSceneCandidateJob(assetId: string, floorThreshold = 1): Promise<Job> {
+  return request<Job>(`/v1/assets/${assetId}/scene-candidates`, {
+    method: "POST",
+    body: JSON.stringify({ floor_threshold: floorThreshold }),
+  });
+}
+
+export function createVideoAnalysisJob(
+  assetId: string,
+  sceneThreshold = 10,
+  candidateJobId?: string,
+): Promise<Job> {
   return request<Job>(`/v1/assets/${assetId}/analysis`, {
     method: "POST",
-    body: JSON.stringify({ scene_threshold: sceneThreshold }),
+    body: JSON.stringify({
+      scene_threshold: sceneThreshold,
+      candidate_job_id: candidateJobId ?? null,
+    }),
   });
 }
 
