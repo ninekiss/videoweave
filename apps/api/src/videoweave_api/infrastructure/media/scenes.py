@@ -14,7 +14,7 @@ _SCENE_LINE = re.compile(
 @dataclass(frozen=True)
 class SceneChange:
     timestamp: float
-    score: float
+    score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -97,16 +97,17 @@ def cluster_scene_changes(
     *,
     max_gap_frames: int = 3,
 ) -> list[TransitionEvent]:
-    """Collapse consecutive scdet responses into one peak transition event.
+    """Collapse consecutive scored scdet responses into peak transition events.
 
-    scdet can report several adjacent frames for one visual transition. The
-    clustering window is expressed in frames so it scales with source FPS
-    instead of imposing a fixed minimum shot duration.
+    This path is retained for FFmpeg diagnostics/fallback. The default automatic
+    shot detector is PySceneDetect.
     """
     if max_gap_frames < 1:
         raise ValueError("max_gap_frames must be positive")
     if not changes:
         return []
+    if any(change.score is None for change in changes):
+        raise ValueError("cluster_scene_changes requires scored changes")
 
     effective_fps = fps if fps is not None and fps > 0 else 30.0
     max_gap_seconds = max_gap_frames / effective_fps
@@ -121,11 +122,11 @@ def cluster_scene_changes(
 
     events: list[TransitionEvent] = []
     for group in groups:
-        peak = max(group, key=lambda item: (item.score, -item.timestamp))
+        peak = max(group, key=lambda item: (float(item.score), -item.timestamp))
         events.append(
             TransitionEvent(
                 timestamp=round(peak.timestamp, 6),
-                score=round(peak.score, 6),
+                score=round(float(peak.score), 6),
                 start=round(group[0].timestamp, 6),
                 end=round(group[-1].timestamp, 6),
                 member_count=len(group),
@@ -140,11 +141,7 @@ def automatic_scene_threshold(
     floor_threshold: float = 1.0,
     mad_multiplier: float = 2.0,
 ) -> tuple[float, dict[str, float | int]]:
-    """Choose a conservative P0 threshold from transition-event scores.
-
-    The detector floor produces noisy low-score responses. Median + k*MAD is
-    robust to a few strong cuts while remaining cheap and deterministic.
-    """
+    """Choose a legacy FFmpeg fallback threshold from transition-event scores."""
     if floor_threshold < 0:
         raise ValueError("floor_threshold must be non-negative")
     if mad_multiplier < 0:

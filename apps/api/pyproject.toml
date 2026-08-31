@@ -11,6 +11,7 @@ dependencies = [
   "pydantic>=2.13,<3",
   "pydantic-settings>=2.15,<3",
   "redis>=8.1,<9",
+  "scenedetect-headless>=0.7.1,<0.8",
   "sqlalchemy>=2.0.52,<2.1",
   "uvicorn[standard]>=0.52,<0.53",
 ]

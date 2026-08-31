@@ -115,11 +115,15 @@ class JobService:
         if mode == "auto":
             spec = {
                 "mode": "auto",
+                "detector": "pyscenedetect-adaptive",
+                "adaptive_threshold": 3.0,
+                "min_scene_len_frames": 3,
+                "window_width": 2,
+                "min_content_val": 15.0,
+                "fallback_detector": "ffmpeg-scdet",
                 "floor_threshold": 1.0,
                 "cluster_gap_frames": 3,
-                "auto_threshold_method": "median-mad",
                 "mad_multiplier": 2.0,
-                "detector": "ffmpeg-scdet",
             }
         else:
             spec = {

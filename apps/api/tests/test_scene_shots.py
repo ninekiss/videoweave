@@ -62,3 +62,10 @@ def test_build_shots_preserves_rapid_real_cuts() -> None:
         (1.15, 2.0),
     ]
     assert shots[1].transition_score == 1.4
+
+
+def test_build_shots_accepts_unscored_detector_boundaries() -> None:
+    shots = build_shots(3.0, [SceneChange(timestamp=1.25)])
+
+    assert [(shot.start, shot.end) for shot in shots] == [(0.0, 1.25), (1.25, 3.0)]
+    assert shots[1].transition_score is None
