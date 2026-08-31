@@ -37,3 +37,17 @@ class MediaAssetType(StrEnum):
     MASK = "MASK"
     SUBTITLE = "SUBTITLE"
     ANALYSIS = "ANALYSIS"
+
+
+class AssetStatus(StrEnum):
+    UPLOADING = "UPLOADING"
+    PROCESSING = "PROCESSING"
+    READY = "READY"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class UploadStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    ABORTED = "ABORTED"
