@@ -3,7 +3,12 @@ from sqlalchemy.orm import Session
 
 from videoweave_api.api.deps import get_db, get_job_queue
 from videoweave_api.infrastructure.jobs.queue import RedisJobQueue
-from videoweave_api.schemas import JobRead, KeyframeExtractionCreate
+from videoweave_api.schemas import (
+    JobRead,
+    KeyframeExtractionCreate,
+    ShotRead,
+    VideoAnalysisCreate,
+)
 from videoweave_api.services.jobs import JobService
 
 router = APIRouter(tags=["jobs"])
@@ -11,6 +16,16 @@ router = APIRouter(tags=["jobs"])
 
 def _service(db: Session, queue: RedisJobQueue) -> JobService:
     return JobService(db, queue)
+
+
+def _raise_job_error(exc: Exception) -> None:
+    if isinstance(exc, LookupError):
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if isinstance(exc, ValueError):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if isinstance(exc, RuntimeError):
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    raise exc
 
 
 @router.post("/assets/{asset_id}/keyframes", response_model=JobRead, status_code=202)
@@ -22,12 +37,33 @@ def create_keyframe_extraction(
 ) -> JobRead:
     try:
         return _service(db, queue).create_keyframe_extraction(asset_id, payload)
+    except (LookupError, ValueError, RuntimeError) as exc:
+        _raise_job_error(exc)
+
+
+@router.post("/assets/{asset_id}/analysis", response_model=JobRead, status_code=202)
+def create_video_analysis(
+    asset_id: str,
+    payload: VideoAnalysisCreate,
+    db: Session = Depends(get_db),
+    queue: RedisJobQueue = Depends(get_job_queue),
+) -> JobRead:
+    try:
+        return _service(db, queue).create_video_analysis(asset_id, payload)
+    except (LookupError, ValueError, RuntimeError) as exc:
+        _raise_job_error(exc)
+
+
+@router.get("/assets/{asset_id}/shots", response_model=list[ShotRead])
+def list_asset_shots(
+    asset_id: str,
+    db: Session = Depends(get_db),
+    queue: RedisJobQueue = Depends(get_job_queue),
+) -> list[ShotRead]:
+    try:
+        return _service(db, queue).list_latest_shots(asset_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/jobs", response_model=list[JobRead])
