@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from videoweave_api.domain.enums import (
     AssetStatus,
@@ -110,6 +110,25 @@ class VideoAnalysisCreate(BaseModel):
     mode: Literal["auto", "manual"] = "auto"
     scene_threshold: float | None = Field(default=None, ge=0.1, le=100.0)
     candidate_job_id: str | None = None
+
+
+class GenerationCreate(BaseModel):
+    capability: Capability
+    prompt: str = Field(min_length=1, max_length=12000)
+    input_asset_id: str | None = None
+    negative_prompt: str | None = Field(default=None, max_length=12000)
+    seed: int | None = Field(default=None, ge=0, le=9223372036854775807)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_generation_inputs(self) -> "GenerationCreate":
+        if self.capability not in {Capability.TEXT_TO_VIDEO, Capability.IMAGE_TO_VIDEO}:
+            raise ValueError("P0 generation only supports text-to-video and image-to-video")
+        if self.capability == Capability.TEXT_TO_VIDEO and self.input_asset_id is not None:
+            raise ValueError("text-to-video does not accept input_asset_id")
+        if self.capability == Capability.IMAGE_TO_VIDEO and self.input_asset_id is None:
+            raise ValueError("image-to-video requires input_asset_id")
+        return self
 
 
 class JobRead(BaseModel):

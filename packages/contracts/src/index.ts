@@ -16,6 +16,7 @@ export const capabilities = [
 ] as const;
 
 export type Capability = (typeof capabilities)[number];
+export type GenerationCapability = Extract<Capability, "text-to-video" | "image-to-video">;
 
 export type MediaAssetType =
   | "IMAGE"
@@ -36,7 +37,7 @@ export type AssetStatus =
 
 export type UploadStatus = "ACTIVE" | "COMPLETED" | "ABORTED";
 
-export type JobType = "keyframe-extraction" | "scene-detection" | "video-analysis";
+export type JobType = "generation" | "keyframe-extraction" | "scene-detection" | "video-analysis";
 
 export type JobState =
   | "PENDING"
@@ -142,6 +143,15 @@ export interface KeyframeResult {
   asset_id: string;
   timestamp: number;
   index: number;
+}
+
+export interface GenerationCreate {
+  capability: GenerationCapability;
+  prompt: string;
+  input_asset_id?: string | null;
+  negative_prompt?: string | null;
+  seed?: number | null;
+  parameters?: Record<string, unknown>;
 }
 
 export interface GenerationSpec {
