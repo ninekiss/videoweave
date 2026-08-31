@@ -18,6 +18,10 @@ class Capability(StrEnum):
     TRANSCODE = "transcode"
 
 
+class JobType(StrEnum):
+    KEYFRAME_EXTRACTION = "keyframe-extraction"
+
+
 class JobState(StrEnum):
     PENDING = "PENDING"
     QUEUED = "QUEUED"
