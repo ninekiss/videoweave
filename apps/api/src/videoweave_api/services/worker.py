@@ -9,7 +9,7 @@ from videoweave_api.core.config import Settings
 from videoweave_api.db.models import Asset, AssetLineage, Job, Shot
 from videoweave_api.domain.enums import AssetStatus, JobState, JobType, MediaAssetType
 from videoweave_api.infrastructure.media.keyframes import extract_frame, uniform_timestamps
-from videoweave_api.infrastructure.media.scenes import build_shots, detect_scene_changes
+from videoweave_api.infrastructure.media.scenes import SceneChange, build_shots, detect_scene_changes
 from videoweave_api.infrastructure.storage.s3 import S3Storage
 
 
@@ -42,6 +42,8 @@ class WorkerService:
         try:
             if job.type == JobType.KEYFRAME_EXTRACTION.value:
                 self._extract_keyframes(job)
+            elif job.type == JobType.SCENE_DETECTION.value:
+                self._detect_scene_candidates(job)
             elif job.type == JobType.VIDEO_ANALYSIS.value:
                 self._analyze_video(job)
             else:
@@ -130,20 +132,89 @@ class WorkerService:
         job.progress = 0.95
         self.db.commit()
 
+    def _detect_scene_candidates(self, job: Job) -> None:
+        source = self._source_video(job)
+        floor_threshold = float(job.spec_json.get("floor_threshold", 1.0))
+
+        with TemporaryDirectory(prefix="videoweave-scenes-") as temp_dir:
+            root = Path(temp_dir)
+            source_path = self._download_source(source, root, job)
+            job.stage = "detecting candidates"
+            job.progress = 0.35
+            self.db.commit()
+
+            changes = detect_scene_changes(source_path, floor_threshold, self.settings)
+            candidates = [
+                {"timestamp": change.timestamp, "score": change.score}
+                for change in changes
+            ]
+            job.result_json = {
+                "detector": "ffmpeg-scdet",
+                "duration": source.duration,
+                "floor_threshold": floor_threshold,
+                "candidate_count": len(candidates),
+                "candidates": candidates,
+            }
+            job.stage = "candidate list ready"
+            job.progress = 0.95
+            self.db.commit()
+
+    def _analysis_changes(self, source: Asset, job: Job, threshold: float) -> list[SceneChange] | None:
+        candidate_job_id = job.spec_json.get("candidate_job_id")
+        if not candidate_job_id:
+            return None
+
+        candidate_job = self.db.get(Job, str(candidate_job_id))
+        if candidate_job is None:
+            raise ValueError("candidate job not found")
+        if candidate_job.type != JobType.SCENE_DETECTION.value:
+            raise ValueError("candidate job is not scene detection")
+        if candidate_job.input_asset_id != source.id:
+            raise ValueError("candidate job belongs to another asset")
+        if candidate_job.state != JobState.SUCCEEDED.value:
+            raise ValueError("candidate job must be SUCCEEDED")
+
+        floor_threshold = float(candidate_job.result_json.get("floor_threshold", 1.0))
+        if threshold < floor_threshold:
+            raise ValueError("scene threshold is below candidate floor threshold")
+
+        raw_candidates = candidate_job.result_json.get("candidates", [])
+        if not isinstance(raw_candidates, list):
+            raise ValueError("candidate job result is invalid")
+
+        changes: list[SceneChange] = []
+        for item in raw_candidates:
+            if not isinstance(item, dict):
+                continue
+            timestamp = item.get("timestamp")
+            score = item.get("score")
+            if not isinstance(timestamp, (int, float)) or not isinstance(score, (int, float)):
+                continue
+            if float(score) >= threshold:
+                changes.append(SceneChange(timestamp=float(timestamp), score=float(score)))
+        return changes
+
     def _analyze_video(self, job: Job) -> None:
         source = self._source_video(job)
         threshold = float(job.spec_json.get("scene_threshold", 10.0))
+        reused_changes = self._analysis_changes(source, job, threshold)
 
         with TemporaryDirectory(prefix="videoweave-analysis-") as temp_dir:
             root = Path(temp_dir)
             source_path = self._download_source(source, root, job)
 
-            job.stage = "detecting scenes"
-            job.progress = 0.12
-            self.db.commit()
-            changes = detect_scene_changes(source_path, threshold, self.settings)
-            boundaries = build_shots(source.duration, changes)
+            if reused_changes is None:
+                job.stage = "detecting scenes"
+                job.progress = 0.12
+                self.db.commit()
+                changes = detect_scene_changes(source_path, threshold, self.settings)
+            else:
+                job.stage = "building calibrated shots"
+                job.progress = 0.16
+                self.db.commit()
+                changes = reused_changes
 
+            boundaries = build_shots(source.duration, changes)
             shot_results: list[dict] = []
             representative_asset_ids: list[str] = []
             total = len(boundaries)
@@ -234,6 +305,7 @@ class WorkerService:
                 "job_id": job.id,
                 "detector": "ffmpeg-scdet",
                 "scene_threshold": threshold,
+                "candidate_job_id": job.spec_json.get("candidate_job_id"),
                 "scene_changes": [
                     {"timestamp": change.timestamp, "score": change.score} for change in changes
                 ],
@@ -261,6 +333,7 @@ class WorkerService:
                         "job_id": job.id,
                         "shot_count": len(shot_results),
                         "scene_threshold": threshold,
+                        "candidate_job_id": job.spec_json.get("candidate_job_id"),
                         "detector": "ffmpeg-scdet",
                     }
                 },
@@ -283,6 +356,7 @@ class WorkerService:
                     metadata_json={
                         "detector": "ffmpeg-scdet",
                         "scene_threshold": threshold,
+                        "candidate_job_id": job.spec_json.get("candidate_job_id"),
                         "shot_count": len(shot_results),
                     },
                 )
@@ -294,6 +368,7 @@ class WorkerService:
                 "shots": shot_results,
                 "representative_asset_ids": representative_asset_ids,
                 "scene_change_count": len(changes),
+                "candidate_job_id": job.spec_json.get("candidate_job_id"),
             }
             job.stage = "finalizing"
             job.progress = 0.95
