@@ -1,0 +1,16 @@
+{
+  "name": "videoweave",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @videoweave/web dev",
+    "build:web": "pnpm --filter @videoweave/web build",
+    "typecheck": "pnpm -r typecheck",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down"
+  }
+}
