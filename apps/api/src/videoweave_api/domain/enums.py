@@ -20,6 +20,7 @@ class Capability(StrEnum):
 
 class JobType(StrEnum):
     KEYFRAME_EXTRACTION = "keyframe-extraction"
+    SCENE_DETECTION = "scene-detection"
     VIDEO_ANALYSIS = "video-analysis"
 
 
