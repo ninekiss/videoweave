@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import type { Job, MediaAsset, Project, SceneCandidate, Shot } from "@videoweave/contracts";
 
 import {
@@ -14,7 +14,6 @@ import {
   listProjects,
 } from "@/lib/api";
 
-const presets = [15, 10, 7, 5, 3, 1] as const;
 const MIN_SHOT_DURATION = 0.25;
 
 function isActive(job: Job | null): boolean {
@@ -52,6 +51,21 @@ function acceptedCandidates(
   return accepted;
 }
 
+function quantile(values: number[], q: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const position = (sorted.length - 1) * q;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sorted[lower];
+  const weight = position - lower;
+  return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+}
+
+function roundThreshold(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function formatTime(value: number): string {
   return `${value.toFixed(3)}s`;
 }
@@ -65,11 +79,37 @@ export function SceneCalibrationWorkspace() {
   const [candidateJob, setCandidateJob] = useState<Job | null>(null);
   const [analysisJob, setAnalysisJob] = useState<Job | null>(null);
   const [shots, setShots] = useState<Shot[]>([]);
-  const [threshold, setThreshold] = useState(10);
+  const [threshold, setThreshold] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
   const selectedAsset = assets.find((asset) => asset.id === assetId) ?? null;
   const candidates = useMemo(() => readCandidates(candidateJob), [candidateJob]);
+  const floorThreshold = typeof candidateJob?.result.floor_threshold === "number"
+    ? candidateJob.result.floor_threshold
+    : 1;
+  const scoreStats = useMemo(() => {
+    if (candidates.length === 0) return null;
+    const scores = candidates.map((candidate) => candidate.score);
+    return {
+      min: Math.min(...scores),
+      max: Math.max(...scores),
+      q25: quantile(scores, 0.25),
+      median: quantile(scores, 0.5),
+      q75: quantile(scores, 0.75),
+    };
+  }, [candidates]);
+  const sliderMin = floorThreshold;
+  const sliderMax = scoreStats ? Math.max(scoreStats.max, floorThreshold + 0.05) : 20;
+  const sliderStep = scoreStats && sliderMax - sliderMin <= 2 ? 0.05 : 0.1;
+  const dynamicPresets = useMemo(() => {
+    if (!scoreStats) return [];
+    const raw = [
+      { label: "Conservative", value: roundThreshold(scoreStats.q75) },
+      { label: "Balanced", value: roundThreshold(scoreStats.median) },
+      { label: "Sensitive", value: roundThreshold(scoreStats.q25) },
+    ];
+    return raw.filter((preset, index) => raw.findIndex((item) => item.value === preset.value) === index);
+  }, [scoreStats]);
   const accepted = useMemo(
     () => acceptedCandidates(candidates, selectedAsset?.duration ?? 0, threshold),
     [candidates, selectedAsset?.duration, threshold],
@@ -109,6 +149,7 @@ export function SceneCalibrationWorkspace() {
     setAnalysisJob(null);
     setShots([]);
     setPreviewUrl(null);
+    setThreshold(1);
     if (!assetId) return;
     void getAssetAccess(assetId)
       .then((access) => setPreviewUrl(access.url))
@@ -119,7 +160,15 @@ export function SceneCalibrationWorkspace() {
     if (!candidateJob || !isActive(candidateJob)) return;
     const timer = window.setInterval(() => {
       void getJob(candidateJob.id)
-        .then(setCandidateJob)
+        .then((job) => {
+          setCandidateJob(job);
+          if (job.state === "SUCCEEDED") {
+            const nextCandidates = readCandidates(job);
+            if (nextCandidates.length > 0) {
+              setThreshold(roundThreshold(quantile(nextCandidates.map((candidate) => candidate.score), 0.5)));
+            }
+          }
+        })
         .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "Could not refresh candidate job"));
     }, 800);
     return () => window.clearInterval(timer);
@@ -179,7 +228,7 @@ export function SceneCalibrationWorkspace() {
             <p className="eyebrow">VIDEO ANALYSIS · CALIBRATION</p>
             <h1>Shot Detection Calibration</h1>
           </div>
-          <span className="status">FFmpeg scdet · candidate floor 1</span>
+          <span className="status">FFmpeg scdet · adaptive threshold</span>
         </header>
 
         {error ? <div className="errorBanner">{error}</div> : null}
@@ -228,6 +277,12 @@ export function SceneCalibrationWorkspace() {
                 {candidateJob ? <span className="status">{candidateJob.state} · {Math.round(candidateJob.progress * 100)}%</span> : null}
               </div>
 
+              {scoreStats ? (
+                <div className="muted small" style={{ marginBottom: 12 }}>
+                  score range {scoreStats.min.toFixed(3)}–{scoreStats.max.toFixed(3)} · median {scoreStats.median.toFixed(3)} · candidate floor {floorThreshold.toFixed(2)}
+                </div>
+              ) : null}
+
               <div style={{ maxHeight: 420, overflow: "auto" }}>
                 {candidates.map((candidate, index) => {
                   const acceptedNow = acceptedKeys.has(`${candidate.timestamp}:${candidate.score}`);
@@ -239,31 +294,50 @@ export function SceneCalibrationWorkspace() {
                     </div>
                   );
                 })}
-                {candidateJob?.state === "SUCCEEDED" && candidates.length === 0 ? <p className="muted">No candidates scored at least 1.</p> : null}
+                {candidateJob?.state === "SUCCEEDED" && candidates.length === 0 ? <p className="muted">No candidates scored at least {floorThreshold.toFixed(2)}.</p> : null}
               </div>
             </section>
           </div>
 
           <aside style={{ display: "grid", alignContent: "start", gap: 18 }}>
             <section className="panel" style={{ padding: 18 }}>
-              <p className="eyebrow">THRESHOLD</p>
-              <h2>{threshold.toFixed(1)}</h2>
+              <p className="eyebrow">ADAPTIVE THRESHOLD</p>
+              <h2>{threshold.toFixed(2)}</h2>
               <input
-                disabled={candidateJob?.state !== "SUCCEEDED"}
-                max="20"
-                min="1"
+                disabled={candidateJob?.state !== "SUCCEEDED" || candidates.length === 0}
+                max={sliderMax}
+                min={sliderMin}
                 onChange={(event) => setThreshold(Number(event.target.value))}
-                step="0.5"
+                step={sliderStep}
                 type="range"
-                value={threshold}
+                value={Math.min(Math.max(threshold, sliderMin), sliderMax)}
                 style={{ width: "100%" }}
               />
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-                {presets.map((value) => (
-                  <button className={threshold === value ? "primary" : "navItem"} key={value} onClick={() => setThreshold(value)} type="button">
-                    {value}
-                  </button>
-                ))}
+              {scoreStats ? (
+                <div className="muted small" style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>{sliderMin.toFixed(2)}</span>
+                  <span>{sliderMax.toFixed(2)}</span>
+                </div>
+              ) : null}
+
+              <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
+                {dynamicPresets.map((preset) => {
+                  const shotCount = selectedAsset
+                    ? acceptedCandidates(candidates, selectedAsset.duration ?? 0, preset.value).length + 1
+                    : 0;
+                  return (
+                    <button
+                      className={Math.abs(threshold - preset.value) < 0.001 ? "primary" : "navItem"}
+                      key={preset.label}
+                      onClick={() => setThreshold(preset.value)}
+                      style={{ display: "flex", justifyContent: "space-between" }}
+                      type="button"
+                    >
+                      <span>{preset.label}</span>
+                      <span>{preset.value.toFixed(2)} · {shotCount} shots</span>
+                    </button>
+                  );
+                })}
               </div>
 
               <div style={{ marginTop: 20 }}>
@@ -275,10 +349,10 @@ export function SceneCalibrationWorkspace() {
               </div>
 
               <button className="primary" disabled={candidateJob?.state !== "SUCCEEDED" || isActive(analysisJob)} onClick={() => void runAnalysis()} style={{ marginTop: 20, width: "100%" }} type="button">
-                {isActive(analysisJob) ? "Generating shot assets…" : `Confirm ${threshold.toFixed(1)} and analyze`}
+                {isActive(analysisJob) ? "Generating shot assets…" : `Confirm ${threshold.toFixed(2)} and analyze`}
               </button>
               <p className="muted small" style={{ marginTop: 10 }}>
-                Changing threshold is instant. Representative JPEGs are generated only after confirmation.
+                The range and presets come from this video's candidate-score distribution. Shot count is an estimate, not a target. Confirm only after the highlighted cut timestamps look plausible in the source video.
               </p>
             </section>
 
