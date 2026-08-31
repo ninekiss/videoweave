@@ -3,8 +3,10 @@
 import type { DragEvent, FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { Images, ScanSearch, Trash2 } from "lucide-react";
 import type { Job, MediaAsset, Project, Shot } from "@videoweave/contracts";
 
+import { Button } from "@/components/ui/button";
 import { uploadVideo, type UploadProgress } from "@/features/assets/multipart-upload";
 import {
   clearVideoAnalysisOutputs,
@@ -506,39 +508,45 @@ export function ProjectsWorkspace() {
             </dl>
 
             {selectedAsset.type === "VIDEO" && selectedAsset.status === "READY" ? (
-              <div style={{ display: "grid", gap: 8 }}>
-                <button
-                  className="primary"
+              <div className="grid gap-2">
+                <Button
+                  className="w-full justify-start"
                   disabled={isActiveJob(activeJob) || isClearingAnalysis}
                   onClick={() => void handleAnalyzeVideo()}
-                  style={{ width: "100%" }}
                   type="button"
                 >
+                  <ScanSearch />
                   {isActiveJob(activeJob) && activeJob?.type === "video-analysis" ? "Analyzing video…" : "Analyze video structure"}
-                </button>
-                <button
-                  className="primary"
+                </Button>
+                <Button
+                  className="w-full justify-start"
                   disabled={isActiveJob(activeJob) || isClearingAnalysis}
                   onClick={() => void handleExtractKeyframes()}
-                  style={{ width: "100%" }}
                   type="button"
+                  variant="secondary"
                 >
+                  <Images />
                   {isActiveJob(activeJob) && activeJob?.type === "keyframe-extraction" ? "Extracting keyframes…" : "Extract 8 keyframes"}
-                </button>
+                </Button>
               </div>
             ) : null}
 
             {cleanupSourceAssetId ? (
-              <button
-                className="projectItem"
-                disabled={isActiveJob(activeJob) || isClearingAnalysis}
-                onClick={() => void handleClearAnalysisOutputs()}
-                style={{ marginTop: 8, width: "100%" }}
-                type="button"
-              >
-                <strong>{isClearingAnalysis ? "Clearing analysis outputs…" : "Clear analysis outputs"}</strong>
-                <span>Keep source video and extracted keyframes</span>
-              </button>
+              <div className="mt-2 grid gap-1">
+                <Button
+                  className="w-full justify-start"
+                  disabled={isActiveJob(activeJob) || isClearingAnalysis}
+                  onClick={() => void handleClearAnalysisOutputs()}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2 />
+                  {isClearingAnalysis ? "Clearing analysis outputs…" : "Clear analysis outputs"}
+                </Button>
+                <p className="mb-0 px-1 text-xs text-red-300/80">
+                  Deletes generated shot frames and analysis JSON. Source video and extracted keyframes stay.
+                </p>
+              </div>
             ) : null}
 
             {activeJob && activeJob.input_asset_id === selectedAsset.id ? (
