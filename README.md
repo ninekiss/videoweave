@@ -8,58 +8,37 @@ VideoWeave is a capability-first video AI workbench. Models, ComfyUI workflows, 
 
 ## Status
 
-The repository is now initialized as a development monorepo. The first milestone is the P0 platform foundation: projects, assets, S3-compatible storage, resumable transfers, jobs/workers, generation adapters, keyframe extraction, basic analysis, and reproducible results.
+The repository is initialized as a development monorepo. The first P0 vertical slice now covers Projects, Assets, S3-compatible multipart upload/resume primitives, media registration, and ffprobe metadata extraction.
 
 ## Repository layout
 
 ```text
 videoweave/
 ├── apps/
-│   ├── web/                 # Next.js workbench UI
+│   ├── web/                 # Next.js App Router workbench UI
 │   └── api/                 # FastAPI control plane
 ├── packages/
-│   └── contracts/           # Stable client/domain contracts
+│   └── contracts/           # Shared stable client/domain contracts
 ├── docs/
-│   ├── architecture/        # Architecture and repository structure
-│   └── plans/               # Product plans (EN / zh-CN)
-├── AGENTS.md                # Coding-agent rules and compatibility policy
-├── compose.yml              # Local PostgreSQL / Valkey / MinIO
+│   ├── architecture/
+│   └── plans/
+├── AGENTS.md
+├── compose.yml              # PostgreSQL / Valkey / MinIO
 └── .env.example
 ```
 
 See [Project Structure](./docs/architecture/PROJECT_STRUCTURE.md) for module boundaries.
 
-## Core mental model
-
-```text
-Understand
-   ↓
-Decompose
-   ↓
-Reverse
-   ↓
-Generate
-   ↓
-Reconstruct
-   ↓
-Process
-   ↓
-Compose
-   ↓
-Deliver
-```
-
 ## Technology baseline
 
 - **Web:** Next.js + React + TypeScript
-- **API / Control Plane:** FastAPI + Pydantic
+- **API:** FastAPI + Pydantic + SQLAlchemy
+- **Database migrations:** Alembic
 - **Local infrastructure:** PostgreSQL + Valkey + MinIO
-- **Media:** FFmpeg
+- **Media:** FFmpeg / ffprobe
+- **Storage:** S3-compatible multipart transfer
 - **Inference adapters:** ComfyUI, Diffusers, remote workers, external APIs
-- **Storage contract:** S3-compatible object storage
 - **Package management:** pnpm for TypeScript, uv for Python
-
-Infrastructure choices are replaceable. Domain contracts must remain stable.
 
 ## Quick start
 
@@ -70,6 +49,7 @@ Infrastructure choices are replaceable. Domain contracts must remain stable.
 - Python 3.12+
 - uv
 - Docker with Compose
+- FFmpeg / ffprobe available on `PATH`
 
 ### 1. Configure environment
 
@@ -77,7 +57,7 @@ Infrastructure choices are replaceable. Domain contracts must remain stable.
 cp .env.example .env
 ```
 
-On Windows PowerShell:
+PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
@@ -91,11 +71,12 @@ docker compose up -d
 
 This starts PostgreSQL, Valkey, MinIO, and the MinIO console.
 
-### 3. Start the API
+### 3. Prepare and start the API
 
 ```bash
 cd apps/api
 uv sync --dev
+uv run alembic upgrade head
 uv run uvicorn videoweave_api.main:app --reload --port 8000
 ```
 
@@ -112,14 +93,37 @@ pnpm dev:web
 
 Open `http://localhost:3000`.
 
-## Initial API surface
+## Current P0 API
 
-The scaffold intentionally starts small:
+```text
+GET    /health
+GET    /v1/capabilities
 
-- `GET /health`
-- `GET /v1/capabilities`
+POST   /v1/projects
+GET    /v1/projects
+GET    /v1/projects/{project_id}
+GET    /v1/projects/{project_id}/assets
+GET    /v1/assets/{asset_id}
 
-Long-running generation and media operations will be asynchronous Jobs rather than long-held HTTP requests.
+POST   /v1/projects/{project_id}/uploads
+POST   /v1/uploads/{upload_session_id}/parts/{part_number}
+GET    /v1/uploads/{upload_session_id}
+POST   /v1/uploads/{upload_session_id}/complete
+DELETE /v1/uploads/{upload_session_id}
+```
+
+The upload flow is intentionally direct-to-S3: the API creates and tracks multipart sessions while clients transfer media directly to object storage. Upload completion triggers best-effort ffprobe metadata extraction.
+
+## Testing policy during rapid validation
+
+Testing is intentionally lean at this stage. Keep tests that protect the primary product path, and avoid spending time on exhaustive edge-case coverage before those cases appear in real usage.
+
+Current core tests focus on:
+
+- API health smoke test
+- ffprobe metadata parsing
+
+Database/S3 integration coverage will be added only where failures begin to matter to real workflows.
 
 ## Documentation
 
@@ -136,14 +140,13 @@ Long-running generation and media operations will be asynchronous Jobs rather th
 4. Every derived asset must preserve lineage and reproducibility metadata.
 5. Frame interpolation, temporal generation, and temporal repair remain separate operators.
 6. Prefer additive upgrades; breaking migrations require an explicit migration path.
+7. During rapid validation, test the core path rather than chasing theoretical coverage.
 
 ## Roadmap
 
-- **P0:** platform foundation and reproducible generation pipeline.
-- **P1:** video understanding, VideoGraph, keyframe reverse engineering, video replication, interpolation/temporal generation/repair, upscale, storyboard.
+- **P0:** platform foundation, asset pipeline, jobs/workers, keyframe extraction, basic analysis and reproducible generation.
+- **P1:** video understanding, VideoGraph, reverse engineering, replication, temporal processing, upscale and storyboard.
 - **P2:** timeline, advanced V2V, consistency systems, multi-GPU/remote workers, collaboration, automation and plugin ecosystem.
-
-See the full plans in `docs/plans/`.
 
 ## License
 
