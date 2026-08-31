@@ -3,6 +3,7 @@ import type {
   Job,
   MediaAsset,
   Project,
+  Shot,
   UploadPartAccess,
   UploadSession,
   UploadStatusResponse,
@@ -100,6 +101,17 @@ export function createKeyframeJob(assetId: string, count = 8): Promise<Job> {
     method: "POST",
     body: JSON.stringify({ count }),
   });
+}
+
+export function createVideoAnalysisJob(assetId: string, sceneThreshold = 10): Promise<Job> {
+  return request<Job>(`/v1/assets/${assetId}/analysis`, {
+    method: "POST",
+    body: JSON.stringify({ scene_threshold: sceneThreshold }),
+  });
+}
+
+export function listAssetShots(assetId: string): Promise<Shot[]> {
+  return request<Shot[]>(`/v1/assets/${assetId}/shots`);
 }
 
 export function getJob(jobId: string): Promise<Job> {
