@@ -2,9 +2,12 @@ import os
 import socket
 
 from videoweave_api.core.config import get_settings
+from videoweave_api.db.models import Job
 from videoweave_api.db.session import SessionLocal
+from videoweave_api.domain.enums import JobType
 from videoweave_api.infrastructure.jobs.queue import RedisJobQueue
 from videoweave_api.infrastructure.storage.s3 import S3Storage
+from videoweave_api.services.generation_worker import GenerationWorkerService
 from videoweave_api.services.worker import WorkerService
 
 
@@ -28,7 +31,11 @@ def main() -> None:
                 continue
             db = SessionLocal()
             try:
-                WorkerService(db, storage, settings, worker_id).process(job_id)
+                job = db.get(Job, job_id)
+                if job is not None and job.type == JobType.GENERATION.value:
+                    GenerationWorkerService(db, storage, settings, worker_id).process(job_id)
+                else:
+                    WorkerService(db, storage, settings, worker_id).process(job_id)
             finally:
                 db.close()
     except KeyboardInterrupt:

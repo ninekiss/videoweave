@@ -35,6 +35,23 @@ class Settings(BaseSettings):
     ffprobe_binary: str = Field(default="ffprobe", validation_alias="FFPROBE_BINARY")
     ffprobe_timeout_seconds: int = Field(default=30, validation_alias="FFPROBE_TIMEOUT_SECONDS")
 
+    comfyui_base_url: str = Field(default="http://127.0.0.1:8188", validation_alias="COMFYUI_BASE_URL")
+    comfyui_workflow_dir: Path = Field(
+        default=_REPO_ROOT / "workflows" / "comfyui",
+        validation_alias="COMFYUI_WORKFLOW_DIR",
+    )
+    comfyui_poll_seconds: float = Field(default=1.0, gt=0, validation_alias="COMFYUI_POLL_SECONDS")
+    comfyui_request_timeout_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        validation_alias="COMFYUI_REQUEST_TIMEOUT_SECONDS",
+    )
+    comfyui_job_timeout_seconds: float = Field(
+        default=1800.0,
+        gt=0,
+        validation_alias="COMFYUI_JOB_TIMEOUT_SECONDS",
+    )
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [value.strip() for value in self.cors_origins.split(",") if value.strip()]
