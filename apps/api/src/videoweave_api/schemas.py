@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from videoweave_api.domain.enums import (
     AssetStatus,
+    Capability,
     JobState,
     JobType,
     MediaAssetType,
@@ -144,3 +145,61 @@ class ShotRead(BaseModel):
     representative_asset_id: str | None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_json")
     created_at: datetime
+
+
+class ModelDefinitionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    family: str | None = Field(default=None, max_length=128)
+    version: str | None = Field(default=None, max_length=128)
+    capability: Capability
+    engine: str = Field(min_length=1, max_length=64)
+    location: str | None = Field(default=None, max_length=1024)
+    status: Literal["AVAILABLE", "DISABLED", "MISSING"] = "AVAILABLE"
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelDefinitionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: str
+    name: str
+    family: str | None
+    version: str | None
+    capability: Capability
+    engine: str
+    location: str | None
+    status: Literal["AVAILABLE", "DISABLED", "MISSING"]
+    config: dict[str, Any] = Field(default_factory=dict, validation_alias="config_json")
+    created_at: datetime
+
+
+class WorkflowDefinitionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    version: str = Field(default="1", min_length=1, max_length=128)
+    capability: Capability
+    engine: str = Field(min_length=1, max_length=64)
+    model_id: str | None = None
+    enabled: bool = True
+    artifact_ref: str | None = Field(default=None, max_length=1024)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowDefinitionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: str
+    name: str
+    version: str
+    capability: Capability
+    engine: str
+    model_id: str | None
+    enabled: bool
+    artifact_ref: str | None
+    config: dict[str, Any] = Field(default_factory=dict, validation_alias="config_json")
+    created_at: datetime
+
+
+class CapabilityResolutionRead(BaseModel):
+    capability: Capability
+    workflow: WorkflowDefinitionRead
+    model: ModelDefinitionRead | None

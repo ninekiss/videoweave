@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, JSON, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from videoweave_api.db.base import Base
@@ -134,4 +134,36 @@ class Shot(Base):
         ForeignKey("assets.id", ondelete="SET NULL"), nullable=True, index=True
     )
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class ModelDefinition(Base):
+    __tablename__ = "model_definitions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_id)
+    name: Mapped[str] = mapped_column(String(200))
+    family: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    capability: Mapped[str] = mapped_column(String(64), index=True)
+    engine: Mapped[str] = mapped_column(String(64), index=True)
+    location: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="AVAILABLE", index=True)
+    config_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class WorkflowDefinition(Base):
+    __tablename__ = "workflow_definitions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_id)
+    name: Mapped[str] = mapped_column(String(200))
+    version: Mapped[str] = mapped_column(String(128), default="1")
+    capability: Mapped[str] = mapped_column(String(64), index=True)
+    engine: Mapped[str] = mapped_column(String(64), index=True)
+    model_id: Mapped[str | None] = mapped_column(
+        ForeignKey("model_definitions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    artifact_ref: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    config_json: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
