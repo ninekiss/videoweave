@@ -688,3 +688,142 @@ Deliver
 ```
 
 This mental model is more important than any individual model, framework or workflow engine.
+
+## 43. Frontend Component Boundaries
+
+Use three explicit component layers. Do not blur them for convenience.
+
+### 43.1 General UI primitives — `apps/web/src/components/ui/`
+
+These are product-agnostic interaction and visual primitives.
+
+Examples:
+
+- Button
+- Card
+- Badge
+- Input
+- Select / NativeSelect
+- Dialog / AlertDialog
+- DropdownMenu
+- Tabs
+- Tooltip
+- Popover
+- Slider
+- Progress
+- Separator
+- ScrollArea
+- Table
+- Form controls
+
+Rules:
+
+- Must not import VideoWeave domain contracts such as `MediaAsset`, `Job`, `Shot`, `WorkflowDefinition` or `ModelDefinition`.
+- Must not call VideoWeave APIs or own feature workflows.
+- Prefer mature implementations before writing custom primitives: first shadcn, then its underlying Radix/Base UI primitive, then another mature maintained library when it materially fits better.
+- Do not partially reimplement an existing component just to avoid adding the official dependency or source component.
+- Keep APIs close to the upstream component unless VideoWeave has a concrete cross-product requirement.
+- Styling is primarily Tailwind plus shared theme tokens. Do not rebuild hover/focus/disabled/menu/dialog behavior in ad-hoc CSS.
+
+Before creating anything in `components/ui`, search the established component library first.
+
+### 43.2 Shared business components — `apps/web/src/components/domain/`
+
+These encode stable VideoWeave domain semantics that are reused across features, but they do not own a complete feature workflow.
+
+Examples:
+
+- `AssetPreview`
+- `AssetThumbnail`
+- `AssetStatusBadge`
+- `JobProgress`
+- `JobStateBadge`
+- `MediaPicker`
+- `WorkflowModelSummary`
+- `ShotCard`
+- lineage summaries
+- reusable generation/result summaries
+
+Rules:
+
+- May import shared VideoWeave contracts and `components/ui` primitives.
+- Should normally be presentational or callback-driven.
+- Must not import from a concrete feature such as `features/projects` or `features/generation`.
+- Should not directly call API endpoints by default. Data fetching, mutation, polling and orchestration belong to a feature layer or a dedicated shared data/service layer.
+- Extract here when the same domain meaning is needed by multiple features, not merely because two pieces of JSX look similar.
+- A component that understands `MediaAsset` or `Job` is not a general UI primitive even if its visual structure is generic.
+
+A useful test: if changing a VideoWeave domain contract could reasonably change the component, it belongs here or in a feature, not in `components/ui`.
+
+### 43.3 Feature/page components — `apps/web/src/features/<feature>/`
+
+These implement a concrete user workflow or feature-specific composition.
+
+Examples:
+
+- Projects asset workspace
+- Generation workspace
+- Shot calibration diagnostics
+- Replication editor
+- Model/workflow registry screens
+
+Rules:
+
+- Own feature-specific state, API calls, polling, mutations and orchestration.
+- Compose both `components/ui` and `components/domain`.
+- May know route/query state and feature-specific error/retry behavior.
+- Do not prematurely extract feature code into shared components until the semantic reuse is real.
+- If a component only makes sense inside one workflow because it knows that workflow's state machine, keep it in that feature.
+
+### 43.4 Layout/application chrome
+
+Cross-application shell components such as navigation, inspectors and page chrome may live under `components/layout/` or an equivalent clearly named shared location.
+
+They may know application navigation structure but should not own feature-specific business operations.
+
+### 43.5 Dependency direction
+
+Preferred dependency direction:
+
+```text
+app routes
+   ↓
+features/<feature>
+   ↓
+components/domain
+   ↓
+components/ui
+```
+
+A feature may also use `components/ui` directly.
+
+Forbidden directions:
+
+```text
+components/ui     → domain contracts / feature code
+components/domain → feature code
+shared layout     → feature workflow internals
+```
+
+### 43.6 Extraction heuristic
+
+Do not decide component placement from visual appearance alone. Decide from semantics and dependencies.
+
+Ask in order:
+
+1. Does a mature generic component already exist? Use it.
+2. Is this product-agnostic and unaware of VideoWeave contracts? `components/ui`.
+3. Does it encode a stable VideoWeave concept used across multiple features? `components/domain`.
+4. Does it own a specific workflow, API mutation, polling loop or feature state machine? `features/<feature>`.
+5. Is reuse only hypothetical? Keep it local until a real second use appears.
+
+Avoid both extremes: do not duplicate stable domain presentation everywhere, and do not build a speculative internal component framework before reuse exists.
+
+### 43.7 CSS and component behavior
+
+- Tailwind is the default for layout and component styling.
+- Global CSS is limited to theme variables, reset/base rules and genuinely global browser/media behavior.
+- Do not create global class names to reproduce behaviors already provided by Tailwind or shadcn.
+- Use Lucide for standard interface icons unless a specific feature needs another established icon set.
+- Native browser controls may be used when shadcn explicitly provides a maintained Native variant and the interaction does not require the richer primitive.
+- When the richer behavior is required, use the mature Select/Combobox/Dialog/etc. rather than extending a simple control into a custom framework.
