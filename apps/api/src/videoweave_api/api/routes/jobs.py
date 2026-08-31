@@ -6,6 +6,7 @@ from videoweave_api.infrastructure.jobs.queue import RedisJobQueue
 from videoweave_api.schemas import (
     JobRead,
     KeyframeExtractionCreate,
+    SceneCandidateDetectionCreate,
     ShotRead,
     VideoAnalysisCreate,
 )
@@ -37,6 +38,19 @@ def create_keyframe_extraction(
 ) -> JobRead:
     try:
         return _service(db, queue).create_keyframe_extraction(asset_id, payload)
+    except (LookupError, ValueError, RuntimeError) as exc:
+        _raise_job_error(exc)
+
+
+@router.post("/assets/{asset_id}/scene-candidates", response_model=JobRead, status_code=202)
+def create_scene_detection(
+    asset_id: str,
+    payload: SceneCandidateDetectionCreate,
+    db: Session = Depends(get_db),
+    queue: RedisJobQueue = Depends(get_job_queue),
+) -> JobRead:
+    try:
+        return _service(db, queue).create_scene_detection(asset_id, payload)
     except (LookupError, ValueError, RuntimeError) as exc:
         _raise_job_error(exc)
 
