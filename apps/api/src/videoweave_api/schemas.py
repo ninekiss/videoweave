@@ -95,6 +95,10 @@ class KeyframeExtractionCreate(BaseModel):
     count: int = Field(default=8, ge=1, le=24)
 
 
+class VideoAnalysisCreate(BaseModel):
+    scene_threshold: float = Field(default=10.0, ge=0.0, le=100.0)
+
+
 class JobRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
@@ -112,3 +116,19 @@ class JobRead(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+
+
+class ShotRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: str
+    project_id: str
+    source_asset_id: str
+    analysis_job_id: str
+    index: int
+    start_time: float
+    end_time: float
+    duration: float
+    representative_asset_id: str | None
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_json")
+    created_at: datetime
