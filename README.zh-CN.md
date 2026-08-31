@@ -8,11 +8,12 @@ VideoWeave 采用 Capability-first 架构。模型、ComfyUI Workflow、推理 R
 
 ## 当前状态
 
-当前 P0 已经可以从 Web UI 真实跑通两条基础链路：
+当前 P0 已经可以从 Web UI 真实跑通三条基础链路：
 
 ```text
 Project → Browser Multipart Upload → S3/MinIO → Asset → ffprobe
 Video Asset → Job → Valkey Queue → Worker → FFmpeg → Keyframe Assets → Lineage
+Video Asset → Video Analysis Job → FFmpeg scdet → Shots → Representative Frames → Analysis Asset
 ```
 
 ## 仓库结构
@@ -84,8 +85,6 @@ uv run alembic upgrade head
 uv run uvicorn videoweave_api.main:app --reload --port 8000
 ```
 
-`uv sync` 会根据 `pyproject.toml` 更新 Python lockfile，包括 Job Queue 使用的 `redis` 客户端。
-
 健康检查：`GET http://localhost:8000/health`
 
 ### 4. 启动 Worker
@@ -131,20 +130,38 @@ Create Project
 
 ```text
 Video Asset
-→ POST keyframe Job
-→ QUEUED
+→ Keyframe Job
 → Valkey
 → Worker
-→ 下载源视频到临时目录
 → FFmpeg 均匀提取 8 帧
-→ JPEG 直接上传 S3 / MinIO
-→ 创建 IMAGE Assets
-→ 创建 AssetLineage
+→ IMAGE Assets
+→ AssetLineage
 → Job SUCCEEDED
-→ Web 自动刷新 Assets
 ```
 
-第一版刻意只实现 `uniform + count=8` 的最小能力。Scene/Shot/内容变化/代表帧等高级策略后续作为同一个 Keyframe Extraction Capability 的新模式扩展。
+第一版只实现 `uniform + count=8`。
+
+### Video Structure Analysis
+
+选中一个 `READY` 的 Video Asset，然后点击 **Analyze video structure**：
+
+```text
+Video Asset
+→ Video Analysis Job
+→ Worker 下载源视频
+→ FFmpeg scdet（threshold=10）
+→ Scene change timestamps
+→ Shot records
+→ 每个 Shot 中点提取代表帧
+→ Representative IMAGE Assets
+→ JSON ANALYSIS Asset
+→ AssetLineage
+→ Job SUCCEEDED
+```
+
+第一版只关注结构：shot 起止时间、时长、scene-change score 和代表帧。人物、物体、字幕、相机运动、caption 等视觉语义分析后续再加入。
+
+每次分析都会保留自己的 Job、Shot 和 Analysis Asset，不覆盖旧分析，因此后续可以比较不同 detector/threshold 的结果。
 
 ## 当前 P0 API
 
@@ -166,6 +183,8 @@ POST   /v1/uploads/{upload_session_id}/complete
 DELETE /v1/uploads/{upload_session_id}
 
 POST   /v1/assets/{asset_id}/keyframes
+POST   /v1/assets/{asset_id}/analysis
+GET    /v1/assets/{asset_id}/shots
 GET    /v1/jobs
 GET    /v1/jobs/{job_id}
 ```
@@ -179,6 +198,8 @@ GET    /v1/jobs/{job_id}
 - API Health smoke test
 - ffprobe 元数据解析
 - uniform keyframe timestamp 计算
+- scene change → shot boundary 计算
+- Worker 空队列 timeout 不导致退出
 
 数据库/S3/浏览器/Queue 的集成测试会在真实使用暴露出值得保护的故障点时再增加。
 
@@ -189,13 +210,14 @@ GET    /v1/jobs/{job_id}
 3. 大媒体文件直接在 Client/Worker 与 S3-compatible Storage 之间传输。
 4. PostgreSQL 保存 Job 的持久状态；Queue 只负责调度。
 5. 所有衍生 Asset 保存 Lineage 与可复现信息。
-6. 普通补帧、生成式补帧、时序修复保持为三个独立 Operator。
-7. 优先增量升级；破坏性变更必须提供明确迁移方案。
-8. 快速验证阶段优先测试核心路径，而不是追求理论覆盖率。
+6. Shot 是视频结构的一等实体，不只是临时 UI 数据。
+7. 普通补帧、生成式补帧、时序修复保持为三个独立 Operator。
+8. 优先增量升级；破坏性变更必须提供明确迁移方案。
+9. 快速验证阶段优先测试核心路径，而不是追求理论覆盖率。
 
 ## Roadmap
 
-- **P0:** Asset Pipeline、Job/Worker、关键帧提取、基础分析、T2V/I2V 和可复现结果。
+- **P0:** Asset Pipeline、Job/Worker、关键帧提取、基础视频结构分析、T2V/I2V 和可复现结果。
 - **P1:** 视频理解、VideoGraph、视觉反推、视频复刻、时序处理、超分和 Storyboard。
 - **P2:** Timeline、高级 V2V、一致性系统、多 GPU/Remote Worker、协作、自动化和插件生态。
 
