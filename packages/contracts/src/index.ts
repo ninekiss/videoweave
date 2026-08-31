@@ -36,7 +36,7 @@ export type AssetStatus =
 
 export type UploadStatus = "ACTIVE" | "COMPLETED" | "ABORTED";
 
-export type JobType = "keyframe-extraction";
+export type JobType = "keyframe-extraction" | "video-analysis";
 
 export type JobState =
   | "PENDING"
@@ -117,6 +117,20 @@ export interface Job {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+}
+
+export interface Shot {
+  id: string;
+  project_id: string;
+  source_asset_id: string;
+  analysis_job_id: string;
+  index: number;
+  start_time: number;
+  end_time: number;
+  duration: number;
+  representative_asset_id: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface KeyframeResult {
