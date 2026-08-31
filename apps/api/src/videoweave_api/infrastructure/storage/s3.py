@@ -93,6 +93,15 @@ class S3Storage:
         else:
             self.client.upload_file(str(source), self.bucket, key)
 
+    def delete_objects(self, keys: list[str]) -> None:
+        unique_keys = list(dict.fromkeys(key for key in keys if key and key != "pending"))
+        for offset in range(0, len(unique_keys), 1000):
+            batch = unique_keys[offset : offset + 1000]
+            self.client.delete_objects(
+                Bucket=self.bucket,
+                Delete={"Objects": [{"Key": key} for key in batch], "Quiet": True},
+            )
+
     def presign_get(self, key: str) -> str:
         return self.client.generate_presigned_url(
             "get_object",

@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from videoweave_api.core.config import Settings
-from videoweave_api.db.models import Asset, Project, UploadSession
-from videoweave_api.domain.enums import AssetStatus, UploadStatus
+from videoweave_api.db.models import Asset, AssetLineage, Job, Project, Shot, UploadSession
+from videoweave_api.domain.enums import AssetStatus, JobType, MediaAssetType, UploadStatus
 from videoweave_api.infrastructure.media.probe import MediaProbeError, probe_media
 from videoweave_api.infrastructure.storage.s3 import S3Storage
 from videoweave_api.schemas import ProjectCreate, UploadCompleteRequest, UploadCreate
@@ -49,6 +49,82 @@ class FoundationService:
         if asset.status != AssetStatus.READY.value:
             raise ValueError("asset is not ready")
         return self.storage.presign_get(asset.storage_key)
+
+    def clear_analysis_outputs(self, asset_id: str) -> dict[str, int]:
+        source = self.get_asset(asset_id)
+        if source.type != MediaAssetType.VIDEO.value:
+            raise ValueError("analysis cleanup requires a VIDEO asset")
+
+        jobs = list(
+            self.db.scalars(
+                select(Job).where(
+                    Job.input_asset_id == source.id,
+                    Job.type == JobType.VIDEO_ANALYSIS.value,
+                )
+            )
+        )
+        if not jobs:
+            return {"analysis_jobs": 0, "deleted_assets": 0, "deleted_shots": 0}
+
+        job_ids = [job.id for job in jobs]
+        derived_asset_ids = list(
+            dict.fromkeys(
+                self.db.scalars(
+                    select(AssetLineage.derived_asset_id).where(
+                        AssetLineage.source_asset_id == source.id,
+                        AssetLineage.job_id.in_(job_ids),
+                    )
+                )
+            )
+        )
+        derived_assets = (
+            list(self.db.scalars(select(Asset).where(Asset.id.in_(derived_asset_ids))))
+            if derived_asset_ids
+            else []
+        )
+        shot_ids = list(
+            self.db.scalars(
+                select(Shot.id).where(
+                    Shot.source_asset_id == source.id,
+                    Shot.analysis_job_id.in_(job_ids),
+                )
+            )
+        )
+
+        self.storage.delete_objects([asset.storage_key for asset in derived_assets])
+
+        self.db.execute(
+            delete(Shot).where(
+                Shot.source_asset_id == source.id,
+                Shot.analysis_job_id.in_(job_ids),
+            )
+        )
+        self.db.execute(
+            delete(AssetLineage).where(
+                AssetLineage.source_asset_id == source.id,
+                AssetLineage.job_id.in_(job_ids),
+            )
+        )
+        for asset in derived_assets:
+            self.db.delete(asset)
+
+        for job in jobs:
+            previous = dict(job.result_json or {})
+            job.result_json = {
+                **previous,
+                "outputs_cleared": True,
+                "shot_count": 0,
+                "shots": [],
+                "representative_asset_ids": [],
+                "analysis_asset_id": None,
+            }
+
+        self.db.commit()
+        return {
+            "analysis_jobs": len(jobs),
+            "deleted_assets": len(derived_assets),
+            "deleted_shots": len(shot_ids),
+        }
 
     def initialize_upload(self, project_id: str, payload: UploadCreate) -> tuple[UploadSession, Asset]:
         self.get_project(project_id)

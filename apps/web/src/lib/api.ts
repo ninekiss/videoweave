@@ -52,6 +52,14 @@ export function getAssetAccess(assetId: string): Promise<AssetAccess> {
   return request<AssetAccess>(`/v1/assets/${assetId}/access`);
 }
 
+export function clearVideoAnalysisOutputs(assetId: string): Promise<{
+  analysis_jobs: number;
+  deleted_assets: number;
+  deleted_shots: number;
+}> {
+  return request(`/v1/assets/${assetId}/analysis-outputs`, { method: "DELETE" });
+}
+
 export function initializeUpload(projectId: string, file: File): Promise<UploadSession> {
   return request<UploadSession>(`/v1/projects/${projectId}/uploads`, {
     method: "POST",

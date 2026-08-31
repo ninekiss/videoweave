@@ -50,6 +50,12 @@ class AssetAccessRead(BaseModel):
     expires_in: int
 
 
+class AnalysisCleanupRead(BaseModel):
+    analysis_jobs: int
+    deleted_assets: int
+    deleted_shots: int
+
+
 class UploadCreate(BaseModel):
     filename: str = Field(min_length=1, max_length=512)
     mime_type: str | None = Field(default=None, max_length=255)

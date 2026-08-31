@@ -5,6 +5,7 @@ from videoweave_api.api.deps import get_db, get_storage
 from videoweave_api.core.config import get_settings
 from videoweave_api.infrastructure.storage.s3 import S3Storage
 from videoweave_api.schemas import (
+    AnalysisCleanupRead,
     AssetAccessRead,
     AssetRead,
     ProjectCreate,
@@ -89,6 +90,20 @@ def get_asset_access(
             url=_service(db, storage).asset_access_url(asset_id),
             expires_in=get_settings().s3_presign_expiry_seconds,
         )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete("/assets/{asset_id}/analysis-outputs", response_model=AnalysisCleanupRead)
+def clear_analysis_outputs(
+    asset_id: str,
+    db: Session = Depends(get_db),
+    storage: S3Storage = Depends(get_storage),
+) -> AnalysisCleanupRead:
+    try:
+        return AnalysisCleanupRead(**_service(db, storage).clear_analysis_outputs(asset_id))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

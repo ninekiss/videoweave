@@ -7,6 +7,7 @@ import type { Job, MediaAsset, Project, Shot } from "@videoweave/contracts";
 
 import { uploadVideo, type UploadProgress } from "@/features/assets/multipart-upload";
 import {
+  clearVideoAnalysisOutputs,
   createKeyframeJob,
   createProject,
   createVideoAnalysisJob,
@@ -66,6 +67,7 @@ export function ProjectsWorkspace() {
   const [newProjectName, setNewProjectName] = useState("");
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isClearingAnalysis, setIsClearingAnalysis] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [activeJob, setActiveJob] = useState<Job | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -254,6 +256,28 @@ export function ProjectsWorkspace() {
       setActiveJob(await createVideoAnalysisJob(selectedAsset.id, 10));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not create video analysis job");
+    }
+  }
+
+  async function handleClearAnalysisOutputs() {
+    if (!selectedAsset || selectedAsset.type !== "VIDEO" || !selectedProjectId) return;
+    if (isActiveJob(activeJob) || isClearingAnalysis) return;
+    if (!window.confirm("Clear generated shot frames and analysis outputs for this video? The source video and extracted keyframes are kept.")) {
+      return;
+    }
+
+    const sourceAssetId = selectedAsset.id;
+    setIsClearingAnalysis(true);
+    setError(null);
+    try {
+      await clearVideoAnalysisOutputs(sourceAssetId);
+      setShots([]);
+      setActiveJob(null);
+      await refreshAssets(selectedProjectId, sourceAssetId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not clear analysis outputs");
+    } finally {
+      setIsClearingAnalysis(false);
     }
   }
 
@@ -469,7 +493,7 @@ export function ProjectsWorkspace() {
               <div style={{ display: "grid", gap: 8 }}>
                 <button
                   className="primary"
-                  disabled={isActiveJob(activeJob)}
+                  disabled={isActiveJob(activeJob) || isClearingAnalysis}
                   onClick={() => void handleAnalyzeVideo()}
                   style={{ width: "100%" }}
                   type="button"
@@ -478,12 +502,22 @@ export function ProjectsWorkspace() {
                 </button>
                 <button
                   className="primary"
-                  disabled={isActiveJob(activeJob)}
+                  disabled={isActiveJob(activeJob) || isClearingAnalysis}
                   onClick={() => void handleExtractKeyframes()}
                   style={{ width: "100%" }}
                   type="button"
                 >
                   {isActiveJob(activeJob) && activeJob?.type === "keyframe-extraction" ? "Extracting keyframes…" : "Extract 8 keyframes"}
+                </button>
+                <button
+                  className="projectItem"
+                  disabled={isActiveJob(activeJob) || isClearingAnalysis}
+                  onClick={() => void handleClearAnalysisOutputs()}
+                  style={{ width: "100%" }}
+                  type="button"
+                >
+                  <strong>{isClearingAnalysis ? "Clearing analysis outputs…" : "Clear analysis outputs"}</strong>
+                  <span>Keep source video and extracted keyframes</span>
                 </button>
               </div>
             ) : null}
