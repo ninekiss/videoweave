@@ -18,6 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -33,7 +34,6 @@ import { cn } from "@/lib/utils";
 
 const MIN_SHOT_DURATION = 0.25;
 const CUT_PREVIEW_RADIUS = 0.6;
-const selectClassName = "h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 disabled:opacity-50";
 
 type CandidateReview = "real" | "false";
 
@@ -412,8 +412,18 @@ export function SceneCalibrationWorkspace() {
 
         <Card>
           <CardContent className="grid gap-4 p-5 md:grid-cols-[minmax(160px,1fr)_minmax(220px,2fr)_auto] md:items-end">
-            <label className="space-y-2"><span className="text-xs font-medium text-muted-foreground">Project</span><select className={selectClassName} onChange={(event) => setProjectId(event.target.value)} value={projectId}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-            <label className="space-y-2"><span className="text-xs font-medium text-muted-foreground">READY video</span><select className={selectClassName} onChange={(event) => setAssetId(event.target.value)} value={assetId}>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>
+            <label className="grid gap-2 [&>[data-slot=native-select-wrapper]]:w-full">
+              <span className="text-xs font-medium text-muted-foreground">Project</span>
+              <NativeSelect className="w-full" disabled={projects.length === 0} onChange={(event) => setProjectId(event.target.value)} value={projectId}>
+                {projects.map((project) => <NativeSelectOption key={project.id} value={project.id}>{project.name}</NativeSelectOption>)}
+              </NativeSelect>
+            </label>
+            <label className="grid gap-2 [&>[data-slot=native-select-wrapper]]:w-full">
+              <span className="text-xs font-medium text-muted-foreground">READY video</span>
+              <NativeSelect className="w-full" disabled={assets.length === 0} onChange={(event) => setAssetId(event.target.value)} value={assetId}>
+                {assets.map((asset) => <NativeSelectOption key={asset.id} value={asset.id}>{asset.filename}</NativeSelectOption>)}
+              </NativeSelect>
+            </label>
             <Button disabled={!assetId || isActive(candidateJob) || isActive(analysisJob)} onClick={() => void detectCandidates()}><ScanSearch /> {isActive(candidateJob) ? "Detecting…" : "Detect candidates"}</Button>
           </CardContent>
         </Card>

@@ -94,11 +94,52 @@ function assetIcon(asset: MediaAsset) {
   return ImageIcon;
 }
 
+function AssetCardPreview({ asset, url }: { asset: MediaAsset; url?: string }) {
+  const Icon = assetIcon(asset);
+  if (asset.status !== "READY" || !url) {
+    return (
+      <div className="grid aspect-video place-items-center border-b bg-black/20 text-muted-foreground">
+        <Icon className="size-7" />
+      </div>
+    );
+  }
+
+  if (asset.type === "IMAGE") {
+    return (
+      <div className="aspect-video overflow-hidden border-b bg-black/40">
+        <img alt="" className="h-full w-full object-cover" loading="lazy" src={url} />
+      </div>
+    );
+  }
+
+  if (asset.type === "VIDEO") {
+    return (
+      <div className="aspect-video overflow-hidden border-b bg-black/70">
+        <video
+          aria-hidden="true"
+          className="h-full w-full object-cover"
+          muted
+          playsInline
+          preload="metadata"
+          src={`${url}#t=0.1`}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid aspect-video place-items-center border-b bg-black/20 text-muted-foreground">
+      <Icon className="size-7" />
+    </div>
+  );
+}
+
 export function ProjectsWorkspace() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [assets, setAssets] = useState<MediaAsset[]>([]);
+  const [assetPreviewUrls, setAssetPreviewUrls] = useState<Record<string, string>>({});
   const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [shots, setShots] = useState<Shot[]>([]);
@@ -143,6 +184,7 @@ export function ProjectsWorkspace() {
   useEffect(() => {
     if (!selectedProjectId) {
       setAssets([]);
+      setAssetPreviewUrls({});
       setSelectedAsset(null);
       return;
     }
@@ -151,6 +193,38 @@ export function ProjectsWorkspace() {
       setError(cause instanceof Error ? cause.message : "Could not load project assets");
     });
   }, [selectedProjectId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const previewable = assets.filter(
+      (asset) => asset.status === "READY" && (asset.type === "IMAGE" || asset.type === "VIDEO"),
+    );
+
+    if (previewable.length === 0) {
+      setAssetPreviewUrls({});
+      return;
+    }
+
+    void Promise.all(
+      previewable.map(async (asset) => {
+        try {
+          const access = await getAssetAccess(asset.id);
+          return [asset.id, access.url] as const;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setAssetPreviewUrls(
+        Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null)),
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assets]);
 
   useEffect(() => {
     let cancelled = false;
@@ -503,7 +577,6 @@ export function ProjectsWorkspace() {
 
               <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
                 {assets.map((asset) => {
-                  const Icon = assetIcon(asset);
                   const selected = selectedAsset?.id === asset.id;
                   return (
                     <button
@@ -512,7 +585,7 @@ export function ProjectsWorkspace() {
                       onClick={() => setSelectedAsset(asset)}
                       type="button"
                     >
-                      <div className="grid aspect-video place-items-center border-b bg-black/20 text-muted-foreground"><Icon className="size-7" /></div>
+                      <AssetCardPreview asset={asset} url={assetPreviewUrls[asset.id]} />
                       <div className="space-y-3 p-4">
                         <div><div className="truncate text-sm font-medium" title={asset.filename}>{asset.filename}</div><div className="mt-1 text-xs text-muted-foreground">{assetSummary(asset)}</div></div>
                         <div className="flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">{formatBytes(asset.size)}</span><Badge variant={assetStatusVariant(asset.status)}>{asset.status}</Badge></div>
