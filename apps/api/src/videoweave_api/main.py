@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from videoweave_api.api.routes.capabilities import router as capabilities_router
 from videoweave_api.api.routes.foundation import router as foundation_router
 from videoweave_api.api.routes.health import router as health_router
+from videoweave_api.api.routes.jobs import router as jobs_router
 from videoweave_api.core.config import get_settings
 
 settings = get_settings()
@@ -17,6 +18,7 @@ api = FastAPI(
 api.include_router(health_router)
 api.include_router(capabilities_router, prefix="/v1")
 api.include_router(foundation_router, prefix="/v1")
+api.include_router(jobs_router, prefix="/v1")
 
 # Keep CORS outside FastAPI's ServerErrorMiddleware so even unexpected 500
 # responses remain readable by the browser during local development.
