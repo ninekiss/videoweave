@@ -2,7 +2,7 @@ name: videoweave
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:15
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-videoweave}
       POSTGRES_USER: ${POSTGRES_USER:-videoweave}
