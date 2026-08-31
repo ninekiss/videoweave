@@ -1,5 +1,6 @@
 import type {
   AssetAccess,
+  GenerationCreate,
   Job,
   MediaAsset,
   Project,
@@ -23,7 +24,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(body || `${response.status} ${response.statusText}`);
+    let message = body;
+    try {
+      const parsed = JSON.parse(body) as { detail?: unknown };
+      if (typeof parsed.detail === "string") message = parsed.detail;
+    } catch {
+      // Keep the raw response body when it is not JSON.
+    }
+    throw new Error(message || `${response.status} ${response.statusText}`);
   }
 
   if (response.status === 204) {
@@ -46,6 +54,10 @@ export function createProject(name: string): Promise<Project> {
 
 export function listProjectAssets(projectId: string): Promise<MediaAsset[]> {
   return request<MediaAsset[]>(`/v1/projects/${projectId}/assets`);
+}
+
+export function getAsset(assetId: string): Promise<MediaAsset> {
+  return request<MediaAsset>(`/v1/assets/${assetId}`);
 }
 
 export function getAssetAccess(assetId: string): Promise<AssetAccess> {
@@ -135,6 +147,13 @@ export function createVideoAnalysisJob(
           }
         : { mode: "auto" },
     ),
+  });
+}
+
+export function createGeneration(projectId: string, payload: GenerationCreate): Promise<Job> {
+  return request<Job>(`/v1/projects/${projectId}/generations`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

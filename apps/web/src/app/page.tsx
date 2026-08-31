@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Clapperboard, FolderOpen, KeyRound, ScanLine, Sparkles, Workflow } from "lucide-react";
+import { Clapperboard, FolderOpen, ScanLine, Sparkles, Workflow } from "lucide-react";
 import Link from "next/link";
 
 import { AppShell } from "@/components/app-shell";
@@ -18,9 +18,10 @@ interface QuickAction {
 const quickActions: QuickAction[] = [
   {
     title: "Generate video",
-    description: "T2V and I2V control-plane contracts are ready for the first execution adapter.",
+    description: "Run T2V or I2V through the registry-resolved ComfyUI execution adapter.",
+    href: "/generate",
     icon: Sparkles,
-    badge: "Next",
+    badge: "Live",
   },
   {
     title: "Replicate video",
@@ -65,11 +66,12 @@ export default function Home() {
           <div className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-emerald-400" /> Valkey worker queue</div>
           <div className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-emerald-400" /> S3-compatible assets</div>
           <div className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-emerald-400" /> Model / Workflow registry</div>
+          <div className="flex items-center gap-2"><span className="size-1.5 rounded-full bg-emerald-400" /> ComfyUI generation adapter</div>
         </CardContent>
       </Card>
 
       <Button asChild className="w-full">
-        <Link href="/projects"><KeyRound /> Open projects</Link>
+        <Link href="/generate"><Sparkles /> Open generate</Link>
       </Button>
     </div>
   );
@@ -95,7 +97,7 @@ export default function Home() {
               </p>
             </div>
             <Button asChild size="lg">
-              <Link href="/projects">Open projects</Link>
+              <Link href="/generate">Generate video</Link>
             </Button>
           </CardContent>
         </Card>

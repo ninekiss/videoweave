@@ -17,17 +17,17 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-type ActiveNav = "workspace" | "projects" | "analysis";
+type ActiveNav = "workspace" | "projects" | "generate" | "analysis";
 
 const liveNavigation = [
   { key: "workspace" as const, label: "Workspace", href: "/", icon: Home },
   { key: "projects" as const, label: "Projects", href: "/projects", icon: FolderKanban },
+  { key: "generate" as const, label: "Generate", href: "/generate", icon: Sparkles },
   { key: "analysis" as const, label: "Shot Calibration", href: "/analysis", icon: ScanLine },
 ];
 
 const upcomingNavigation = [
   ["Assets", Boxes],
-  ["Generate", Sparkles],
   ["Replication", Clapperboard],
   ["Storyboard", Layers3],
   ["Jobs", Gauge],
