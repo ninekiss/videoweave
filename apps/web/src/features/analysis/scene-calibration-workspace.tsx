@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Job, MediaAsset, Project, SceneCandidate, Shot } from "@videoweave/contracts";
 
 import {
@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 
 const MIN_SHOT_DURATION = 0.25;
+const CUT_PREVIEW_RADIUS = 0.6;
 
 function isActive(job: Job | null): boolean {
   return job?.state === "QUEUED" || job?.state === "RUNNING";
@@ -71,6 +72,8 @@ function formatTime(value: number): string {
 }
 
 export function SceneCalibrationWorkspace() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const previewEndRef = useRef<number | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState("");
   const [assets, setAssets] = useState<MediaAsset[]>([]);
@@ -80,10 +83,12 @@ export function SceneCalibrationWorkspace() {
   const [analysisJob, setAnalysisJob] = useState<Job | null>(null);
   const [shots, setShots] = useState<Shot[]>([]);
   const [threshold, setThreshold] = useState(1);
+  const [selectedCandidateIndex, setSelectedCandidateIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const selectedAsset = assets.find((asset) => asset.id === assetId) ?? null;
   const candidates = useMemo(() => readCandidates(candidateJob), [candidateJob]);
+  const selectedCandidate = selectedCandidateIndex == null ? null : candidates[selectedCandidateIndex] ?? null;
   const floorThreshold = typeof candidateJob?.result.floor_threshold === "number"
     ? candidateJob.result.floor_threshold
     : 1;
@@ -119,6 +124,9 @@ export function SceneCalibrationWorkspace() {
     [accepted],
   );
   const estimatedShots = selectedAsset && candidateJob?.state === "SUCCEEDED" ? accepted.length + 1 : 0;
+  const selectedCandidateAccepted = selectedCandidate
+    ? acceptedKeys.has(`${selectedCandidate.timestamp}:${selectedCandidate.score}`)
+    : false;
 
   useEffect(() => {
     void listProjects()
@@ -150,6 +158,8 @@ export function SceneCalibrationWorkspace() {
     setShots([]);
     setPreviewUrl(null);
     setThreshold(1);
+    setSelectedCandidateIndex(null);
+    previewEndRef.current = null;
     if (!assetId) return;
     void getAssetAccess(assetId)
       .then((access) => setPreviewUrl(access.url))
@@ -194,6 +204,8 @@ export function SceneCalibrationWorkspace() {
     setError(null);
     setShots([]);
     setAnalysisJob(null);
+    setSelectedCandidateIndex(null);
+    previewEndRef.current = null;
     try {
       setCandidateJob(await createSceneCandidateJob(assetId, 1));
     } catch (cause) {
@@ -209,6 +221,41 @@ export function SceneCalibrationWorkspace() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not start calibrated analysis");
     }
+  }
+
+  function previewCandidate(index: number) {
+    const candidate = candidates[index];
+    const video = videoRef.current;
+    if (!candidate || !video) return;
+
+    setSelectedCandidateIndex(index);
+    const knownDuration = Number.isFinite(video.duration)
+      ? video.duration
+      : selectedAsset?.duration ?? candidate.timestamp + CUT_PREVIEW_RADIUS;
+    const start = Math.max(0, candidate.timestamp - CUT_PREVIEW_RADIUS);
+    const end = Math.min(knownDuration, candidate.timestamp + CUT_PREVIEW_RADIUS);
+
+    previewEndRef.current = end;
+    video.pause();
+    video.currentTime = start;
+    void video.play().catch(() => {
+      // The browser may block playback in unusual embedding contexts; seeking still succeeds.
+    });
+  }
+
+  function moveCandidate(delta: number) {
+    if (candidates.length === 0) return;
+    const current = selectedCandidateIndex ?? (delta > 0 ? -1 : candidates.length);
+    const next = Math.min(Math.max(current + delta, 0), candidates.length - 1);
+    previewCandidate(next);
+  }
+
+  function handlePreviewTimeUpdate() {
+    const video = videoRef.current;
+    const previewEnd = previewEndRef.current;
+    if (!video || previewEnd == null || video.currentTime < previewEnd) return;
+    video.pause();
+    previewEndRef.current = null;
   }
 
   return (
@@ -262,10 +309,52 @@ export function SceneCalibrationWorkspace() {
         <section style={{ display: "grid", gap: 18, gridTemplateColumns: "minmax(0, 1.15fr) minmax(360px, .85fr)" }}>
           <div style={{ display: "grid", gap: 18 }}>
             <section className="panel" style={{ padding: 16 }}>
-              <p className="eyebrow">SOURCE VIDEO</p>
-              <div className="videoPreview">
-                {previewUrl ? <video controls preload="metadata" src={previewUrl} /> : <div className="previewLoading">Select a video</div>}
+              <div className="sectionTitle compact">
+                <div>
+                  <p className="eyebrow">SOURCE VIDEO</p>
+                  <h2>Cut preview</h2>
+                </div>
+                {selectedCandidate ? (
+                  <span className={selectedCandidateAccepted ? "assetStatus ready" : "status"}>
+                    Candidate #{(selectedCandidateIndex ?? 0) + 1} · {formatTime(selectedCandidate.timestamp)}
+                  </span>
+                ) : null}
               </div>
+              <div className="videoPreview">
+                {previewUrl ? (
+                  <video
+                    controls
+                    onEnded={() => { previewEndRef.current = null; }}
+                    onTimeUpdate={handlePreviewTimeUpdate}
+                    preload="metadata"
+                    ref={videoRef}
+                    src={previewUrl}
+                  />
+                ) : (
+                  <div className="previewLoading">Select a video</div>
+                )}
+              </div>
+
+              {selectedCandidate ? (
+                <div className="panel" style={{ display: "grid", gap: 12, marginTop: 12, padding: 12 }}>
+                  <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", gap: 12 }}>
+                    <div>
+                      <strong>Candidate #{(selectedCandidateIndex ?? 0) + 1}</strong>
+                      <div className="muted small">
+                        {formatTime(selectedCandidate.timestamp)} · score {selectedCandidate.score.toFixed(3)} · {selectedCandidateAccepted ? "accepted at current threshold" : "below current threshold"}
+                      </div>
+                    </div>
+                    <span className="muted small">Preview ±{CUT_PREVIEW_RADIUS.toFixed(1)}s</span>
+                  </div>
+                  <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1.4fr 1fr" }}>
+                    <button className="navItem" disabled={selectedCandidateIndex === 0} onClick={() => moveCandidate(-1)} type="button">Previous cut</button>
+                    <button className="primary" onClick={() => previewCandidate(selectedCandidateIndex ?? 0)} type="button">Replay cut</button>
+                    <button className="navItem" disabled={selectedCandidateIndex === candidates.length - 1} onClick={() => moveCandidate(1)} type="button">Next cut</button>
+                  </div>
+                </div>
+              ) : candidateJob?.state === "SUCCEEDED" && candidates.length > 0 ? (
+                <p className="muted small" style={{ marginTop: 10 }}>Click any candidate below to play the 0.6 seconds before and after that cut.</p>
+              ) : null}
             </section>
 
             <section className="panel" style={{ padding: 18 }}>
@@ -286,12 +375,33 @@ export function SceneCalibrationWorkspace() {
               <div style={{ maxHeight: 420, overflow: "auto" }}>
                 {candidates.map((candidate, index) => {
                   const acceptedNow = acceptedKeys.has(`${candidate.timestamp}:${candidate.score}`);
+                  const selectedNow = selectedCandidateIndex === index;
                   return (
-                    <div key={`${candidate.timestamp}-${index}`} style={{ alignItems: "center", borderBottom: "1px solid var(--border)", display: "grid", gap: 12, gridTemplateColumns: "70px 1fr 90px", padding: "9px 2px" }}>
+                    <button
+                      aria-pressed={selectedNow}
+                      key={`${candidate.timestamp}-${index}`}
+                      onClick={() => previewCandidate(index)}
+                      style={{
+                        alignItems: "center",
+                        background: "transparent",
+                        border: "none",
+                        borderBottom: "1px solid var(--border)",
+                        borderLeft: selectedNow ? "3px solid currentColor" : "3px solid transparent",
+                        color: "inherit",
+                        cursor: "pointer",
+                        display: "grid",
+                        gap: 12,
+                        gridTemplateColumns: "70px 1fr 90px",
+                        padding: "9px 6px",
+                        textAlign: "left",
+                        width: "100%",
+                      }}
+                      type="button"
+                    >
                       <strong>#{index + 1}</strong>
                       <span>{formatTime(candidate.timestamp)}</span>
                       <span className={acceptedNow ? "assetStatus ready" : "muted"}>score {candidate.score.toFixed(3)}</span>
-                    </div>
+                    </button>
                   );
                 })}
                 {candidateJob?.state === "SUCCEEDED" && candidates.length === 0 ? <p className="muted">No candidates scored at least {floorThreshold.toFixed(2)}.</p> : null}
@@ -352,7 +462,7 @@ export function SceneCalibrationWorkspace() {
                 {isActive(analysisJob) ? "Generating shot assets…" : `Confirm ${threshold.toFixed(2)} and analyze`}
               </button>
               <p className="muted small" style={{ marginTop: 10 }}>
-                The range and presets come from this video's candidate-score distribution. Shot count is an estimate, not a target. Confirm only after the highlighted cut timestamps look plausible in the source video.
+                The range and presets come from this video's candidate-score distribution. Shot count is an estimate, not a target. Confirm only after previewing the highlighted cuts in the source video.
               </p>
             </section>
 
