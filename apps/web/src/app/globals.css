@@ -51,7 +51,7 @@ h2 { letter-spacing: -0.03em; }
 .sectionTitle { margin-bottom: 14px; align-items: baseline; }
 .sectionTitle h2 { margin-bottom: 0; }
 .sectionTitle.compact { margin-bottom: 18px; }
-.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.quickActionGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--panel-soft); }
 .cardPreview { height: 112px; border-radius: 8px; margin-bottom: 16px; background: linear-gradient(145deg, #171a20, #0b0d10); border: 1px solid #1f232a; }
 .card h3 { font-size: 15px; margin-bottom: 6px; }
@@ -135,6 +135,6 @@ dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
   nav { grid-template-columns: repeat(3, 1fr); }
   .workspace { padding: 18px; }
   .hero, .split { align-items: flex-start; flex-direction: column; }
-  .grid, .assetGrid, .projectList { grid-template-columns: 1fr; }
+  .quickActionGrid, .assetGrid, .projectList { grid-template-columns: 1fr; }
   .progressHeader { align-items: flex-start; flex-direction: column; }
 }

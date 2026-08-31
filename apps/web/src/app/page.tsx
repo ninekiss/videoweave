@@ -55,7 +55,7 @@ export default function Home() {
             <h2>Quick actions</h2>
             <span className="muted">Upload, keyframes and shot calibration are live</span>
           </div>
-          <div className="grid">
+          <div className="quickActionGrid">
             {quickActions.map(([title, description, href]) => {
               const content = (
                 <>
