@@ -17,6 +17,10 @@ class Settings(BaseSettings):
         validation_alias="DATABASE_URL",
     )
 
+    redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
+    job_queue_key: str = Field(default="videoweave:jobs", validation_alias="JOB_QUEUE_KEY")
+    worker_poll_seconds: int = Field(default=5, validation_alias="WORKER_POLL_SECONDS")
+
     s3_endpoint_url: str | None = Field(default="http://localhost:9000", validation_alias="S3_ENDPOINT_URL")
     s3_region: str = Field(default="us-east-1", validation_alias="S3_REGION")
     s3_bucket: str = Field(default="videoweave", validation_alias="S3_BUCKET")
@@ -26,6 +30,8 @@ class Settings(BaseSettings):
     s3_presign_expiry_seconds: int = Field(default=3600, validation_alias="S3_PRESIGN_EXPIRY_SECONDS")
     s3_multipart_part_size_mb: int = Field(default=64, validation_alias="S3_MULTIPART_PART_SIZE_MB")
 
+    ffmpeg_binary: str = Field(default="ffmpeg", validation_alias="FFMPEG_BINARY")
+    ffmpeg_timeout_seconds: int = Field(default=120, validation_alias="FFMPEG_TIMEOUT_SECONDS")
     ffprobe_binary: str = Field(default="ffprobe", validation_alias="FFPROBE_BINARY")
     ffprobe_timeout_seconds: int = Field(default=30, validation_alias="FFPROBE_TIMEOUT_SECONDS")
 
