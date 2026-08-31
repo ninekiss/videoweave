@@ -35,6 +35,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-videoweave}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-videoweave-local-dev}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${VIDEOWEAVE_CORS_ORIGINS:-http://localhost:3000}
     ports:
       - "9000:9000"
       - "9001:9001"
