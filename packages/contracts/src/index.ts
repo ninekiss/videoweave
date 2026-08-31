@@ -27,6 +27,15 @@ export type MediaAssetType =
   | "SUBTITLE"
   | "ANALYSIS";
 
+export type AssetStatus =
+  | "UPLOADING"
+  | "PROCESSING"
+  | "READY"
+  | "FAILED"
+  | "CANCELLED";
+
+export type UploadStatus = "ACTIVE" | "COMPLETED" | "ABORTED";
+
 export type JobState =
   | "PENDING"
   | "QUEUED"
@@ -35,6 +44,50 @@ export type JobState =
   | "SUCCEEDED"
   | "FAILED"
   | "CANCELLED";
+
+export interface Project {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export interface MediaAsset {
+  id: string;
+  project_id: string;
+  type: MediaAssetType;
+  status: AssetStatus;
+  filename: string;
+  mime_type: string | null;
+  size: number | null;
+  width: number | null;
+  height: number | null;
+  duration: number | null;
+  fps: number | null;
+  frame_count: number | null;
+  codec: string | null;
+  audio_codec: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface UploadSession {
+  upload_session_id: string;
+  asset_id: string;
+  part_size: number;
+}
+
+export interface UploadedPart {
+  part_number: number;
+  etag: string;
+  size: number;
+}
+
+export interface UploadStatusResponse {
+  upload_session_id: string;
+  asset_id: string;
+  status: UploadStatus;
+  parts: UploadedPart[];
+}
 
 export interface GenerationSpec {
   capability: Capability;
