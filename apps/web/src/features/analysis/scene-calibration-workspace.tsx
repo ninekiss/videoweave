@@ -17,6 +17,8 @@ import {
 const MIN_SHOT_DURATION = 0.25;
 const CUT_PREVIEW_RADIUS = 0.6;
 
+type CandidateReview = "real" | "false";
+
 function isActive(job: Job | null): boolean {
   return job?.state === "QUEUED" || job?.state === "RUNNING";
 }
@@ -31,6 +33,10 @@ function readCandidates(job: Job | null): SceneCandidate[] {
     if (typeof timestamp !== "number" || typeof score !== "number") return [];
     return [{ timestamp, score }];
   });
+}
+
+function candidateKey(candidate: SceneCandidate): string {
+  return `${candidate.timestamp}:${candidate.score}`;
 }
 
 function acceptedCandidates(
@@ -71,6 +77,12 @@ function formatTime(value: number): string {
   return `${value.toFixed(3)}s`;
 }
 
+function reviewLabel(review: CandidateReview | undefined): string {
+  if (review === "real") return "Real cut";
+  if (review === "false") return "False positive";
+  return "Unreviewed";
+}
+
 export function SceneCalibrationWorkspace() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewEndRef = useRef<number | null>(null);
@@ -84,14 +96,17 @@ export function SceneCalibrationWorkspace() {
   const [shots, setShots] = useState<Shot[]>([]);
   const [threshold, setThreshold] = useState(1);
   const [selectedCandidateIndex, setSelectedCandidateIndex] = useState<number | null>(null);
+  const [reviews, setReviews] = useState<Record<string, CandidateReview>>({});
   const [error, setError] = useState<string | null>(null);
 
   const selectedAsset = assets.find((asset) => asset.id === assetId) ?? null;
   const candidates = useMemo(() => readCandidates(candidateJob), [candidateJob]);
   const selectedCandidate = selectedCandidateIndex == null ? null : candidates[selectedCandidateIndex] ?? null;
+  const selectedCandidateReview = selectedCandidate ? reviews[candidateKey(selectedCandidate)] : undefined;
   const floorThreshold = typeof candidateJob?.result.floor_threshold === "number"
     ? candidateJob.result.floor_threshold
     : 1;
+
   const scoreStats = useMemo(() => {
     if (candidates.length === 0) return null;
     const scores = candidates.map((candidate) => candidate.score);
@@ -103,9 +118,11 @@ export function SceneCalibrationWorkspace() {
       q75: quantile(scores, 0.75),
     };
   }, [candidates]);
+
   const sliderMin = floorThreshold;
   const sliderMax = scoreStats ? Math.max(scoreStats.max, floorThreshold + 0.05) : 20;
   const sliderStep = scoreStats && sliderMax - sliderMin <= 2 ? 0.05 : 0.1;
+
   const dynamicPresets = useMemo(() => {
     if (!scoreStats) return [];
     const raw = [
@@ -115,18 +132,60 @@ export function SceneCalibrationWorkspace() {
     ];
     return raw.filter((preset, index) => raw.findIndex((item) => item.value === preset.value) === index);
   }, [scoreStats]);
+
   const accepted = useMemo(
     () => acceptedCandidates(candidates, selectedAsset?.duration ?? 0, threshold),
     [candidates, selectedAsset?.duration, threshold],
   );
+
   const acceptedKeys = useMemo(
-    () => new Set(accepted.map((candidate) => `${candidate.timestamp}:${candidate.score}`)),
+    () => new Set(accepted.map(candidateKey)),
     [accepted],
   );
+
   const estimatedShots = selectedAsset && candidateJob?.state === "SUCCEEDED" ? accepted.length + 1 : 0;
   const selectedCandidateAccepted = selectedCandidate
-    ? acceptedKeys.has(`${selectedCandidate.timestamp}:${selectedCandidate.score}`)
+    ? acceptedKeys.has(candidateKey(selectedCandidate))
     : false;
+
+  const reviewStats = useMemo(() => {
+    let reviewed = 0;
+    let reviewedReal = 0;
+    let reviewedFalse = 0;
+    let acceptedReviewed = 0;
+    let acceptedReal = 0;
+    let acceptedFalse = 0;
+    let missedReviewedReal = 0;
+
+    for (const candidate of candidates) {
+      const key = candidateKey(candidate);
+      const review = reviews[key];
+      if (!review) continue;
+
+      reviewed += 1;
+      if (review === "real") reviewedReal += 1;
+      if (review === "false") reviewedFalse += 1;
+
+      if (acceptedKeys.has(key)) {
+        acceptedReviewed += 1;
+        if (review === "real") acceptedReal += 1;
+        if (review === "false") acceptedFalse += 1;
+      } else if (review === "real") {
+        missedReviewedReal += 1;
+      }
+    }
+
+    return {
+      reviewed,
+      reviewedReal,
+      reviewedFalse,
+      acceptedReviewed,
+      acceptedReal,
+      acceptedFalse,
+      missedReviewedReal,
+      precision: acceptedReviewed > 0 ? acceptedReal / acceptedReviewed : null,
+    };
+  }, [acceptedKeys, candidates, reviews]);
 
   useEffect(() => {
     void listProjects()
@@ -159,6 +218,7 @@ export function SceneCalibrationWorkspace() {
     setPreviewUrl(null);
     setThreshold(1);
     setSelectedCandidateIndex(null);
+    setReviews({});
     previewEndRef.current = null;
     if (!assetId) return;
     void getAssetAccess(assetId)
@@ -205,6 +265,7 @@ export function SceneCalibrationWorkspace() {
     setShots([]);
     setAnalysisJob(null);
     setSelectedCandidateIndex(null);
+    setReviews({});
     previewEndRef.current = null;
     try {
       setCandidateJob(await createSceneCandidateJob(assetId, 1));
@@ -239,7 +300,7 @@ export function SceneCalibrationWorkspace() {
     video.pause();
     video.currentTime = start;
     void video.play().catch(() => {
-      // The browser may block playback in unusual embedding contexts; seeking still succeeds.
+      // Seeking still succeeds when autoplay is blocked.
     });
   }
 
@@ -248,6 +309,17 @@ export function SceneCalibrationWorkspace() {
     const current = selectedCandidateIndex ?? (delta > 0 ? -1 : candidates.length);
     const next = Math.min(Math.max(current + delta, 0), candidates.length - 1);
     previewCandidate(next);
+  }
+
+  function reviewCandidate(review: CandidateReview | null) {
+    if (!selectedCandidate) return;
+    const key = candidateKey(selectedCandidate);
+    setReviews((current) => {
+      const next = { ...current };
+      if (review) next[key] = review;
+      else delete next[key];
+      return next;
+    });
   }
 
   function handlePreviewTimeUpdate() {
@@ -320,6 +392,7 @@ export function SceneCalibrationWorkspace() {
                   </span>
                 ) : null}
               </div>
+
               <div className="videoPreview">
                 {previewUrl ? (
                   <video
@@ -346,14 +419,37 @@ export function SceneCalibrationWorkspace() {
                     </div>
                     <span className="muted small">Preview ±{CUT_PREVIEW_RADIUS.toFixed(1)}s</span>
                   </div>
+
                   <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1.4fr 1fr" }}>
                     <button className="navItem" disabled={selectedCandidateIndex === 0} onClick={() => moveCandidate(-1)} type="button">Previous cut</button>
                     <button className="primary" onClick={() => previewCandidate(selectedCandidateIndex ?? 0)} type="button">Replay cut</button>
                     <button className="navItem" disabled={selectedCandidateIndex === candidates.length - 1} onClick={() => moveCandidate(1)} type="button">Next cut</button>
                   </div>
+
+                  <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr auto" }}>
+                    <button
+                      className={selectedCandidateReview === "real" ? "primary" : "navItem"}
+                      onClick={() => reviewCandidate("real")}
+                      type="button"
+                    >
+                      ✓ Real cut
+                    </button>
+                    <button
+                      className={selectedCandidateReview === "false" ? "primary" : "navItem"}
+                      onClick={() => reviewCandidate("false")}
+                      type="button"
+                    >
+                      ✕ False positive
+                    </button>
+                    <button className="navItem" disabled={!selectedCandidateReview} onClick={() => reviewCandidate(null)} type="button">
+                      Clear
+                    </button>
+                  </div>
                 </div>
               ) : candidateJob?.state === "SUCCEEDED" && candidates.length > 0 ? (
-                <p className="muted small" style={{ marginTop: 10 }}>Click any candidate below to play the 0.6 seconds before and after that cut.</p>
+                <p className="muted small" style={{ marginTop: 10 }}>
+                  Click any candidate below to preview the cut, then mark it as a real cut or false positive.
+                </p>
               ) : null}
             </section>
 
@@ -374,8 +470,10 @@ export function SceneCalibrationWorkspace() {
 
               <div style={{ maxHeight: 420, overflow: "auto" }}>
                 {candidates.map((candidate, index) => {
-                  const acceptedNow = acceptedKeys.has(`${candidate.timestamp}:${candidate.score}`);
+                  const key = candidateKey(candidate);
+                  const acceptedNow = acceptedKeys.has(key);
                   const selectedNow = selectedCandidateIndex === index;
+                  const review = reviews[key];
                   return (
                     <button
                       aria-pressed={selectedNow}
@@ -391,7 +489,7 @@ export function SceneCalibrationWorkspace() {
                         cursor: "pointer",
                         display: "grid",
                         gap: 12,
-                        gridTemplateColumns: "70px 1fr 90px",
+                        gridTemplateColumns: "64px 1fr 92px 110px",
                         padding: "9px 6px",
                         textAlign: "left",
                         width: "100%",
@@ -401,10 +499,15 @@ export function SceneCalibrationWorkspace() {
                       <strong>#{index + 1}</strong>
                       <span>{formatTime(candidate.timestamp)}</span>
                       <span className={acceptedNow ? "assetStatus ready" : "muted"}>score {candidate.score.toFixed(3)}</span>
+                      <span className={review === "real" ? "assetStatus ready" : review === "false" ? "errorText small" : "muted small"}>
+                        {reviewLabel(review)}
+                      </span>
                     </button>
                   );
                 })}
-                {candidateJob?.state === "SUCCEEDED" && candidates.length === 0 ? <p className="muted">No candidates scored at least {floorThreshold.toFixed(2)}.</p> : null}
+                {candidateJob?.state === "SUCCEEDED" && candidates.length === 0 ? (
+                  <p className="muted">No candidates scored at least {floorThreshold.toFixed(2)}.</p>
+                ) : null}
               </div>
             </section>
           </div>
@@ -462,9 +565,59 @@ export function SceneCalibrationWorkspace() {
                 {isActive(analysisJob) ? "Generating shot assets…" : `Confirm ${threshold.toFixed(2)} and analyze`}
               </button>
               <p className="muted small" style={{ marginTop: 10 }}>
-                The range and presets come from this video's candidate-score distribution. Shot count is an estimate, not a target. Confirm only after previewing the highlighted cuts in the source video.
+                The range and presets come from this video's candidate-score distribution. Shot count is an estimate, not a target. Confirm only after previewing the highlighted cuts.
               </p>
             </section>
+
+            {candidateJob?.state === "SUCCEEDED" ? (
+              <section className="panel" style={{ padding: 18 }}>
+                <p className="eyebrow">MANUAL EVALUATION</p>
+                <h2>{reviewStats.reviewed} / {candidates.length} reviewed</h2>
+
+                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr", marginTop: 14 }}>
+                  <div>
+                    <strong>{reviewStats.reviewedReal}</strong>
+                    <div className="muted small">reviewed real cuts</div>
+                  </div>
+                  <div>
+                    <strong>{reviewStats.reviewedFalse}</strong>
+                    <div className="muted small">reviewed false positives</div>
+                  </div>
+                  <div>
+                    <strong>{reviewStats.acceptedReviewed}</strong>
+                    <div className="muted small">reviewed accepted</div>
+                  </div>
+                  <div>
+                    <strong>{reviewStats.missedReviewedReal}</strong>
+                    <div className="muted small">missed reviewed real cuts</div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 18 }}>
+                  <p className="eyebrow">CURRENT THRESHOLD QUALITY</p>
+                  <div style={{ display: "flex", gap: 24 }}>
+                    <div>
+                      <strong style={{ fontSize: 28 }}>{reviewStats.acceptedReal}</strong>
+                      <div className="muted small">real</div>
+                    </div>
+                    <div>
+                      <strong style={{ fontSize: 28 }}>{reviewStats.acceptedFalse}</strong>
+                      <div className="muted small">false</div>
+                    </div>
+                    <div>
+                      <strong style={{ fontSize: 28 }}>
+                        {reviewStats.precision == null ? "—" : `${Math.round(reviewStats.precision * 100)}%`}
+                      </strong>
+                      <div className="muted small">precision</div>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="muted small" style={{ marginTop: 12 }}>
+                  Precision uses only accepted candidates you reviewed. Unreviewed candidates are excluded; this is a calibration aid, not a full recall metric.
+                </p>
+              </section>
+            ) : null}
 
             {analysisJob ? (
               <section className="panel" style={{ padding: 18 }}>
