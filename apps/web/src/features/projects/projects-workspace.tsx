@@ -3,12 +3,14 @@
 import type { DragEvent, FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import type { MediaAsset, Project } from "@videoweave/contracts";
+import type { Job, MediaAsset, Project } from "@videoweave/contracts";
 
 import { uploadVideo, type UploadProgress } from "@/features/assets/multipart-upload";
 import {
+  createKeyframeJob,
   createProject,
   getAssetAccess,
+  getJob,
   listProjectAssets,
   listProjects,
 } from "@/lib/api";
@@ -41,8 +43,13 @@ function formatDuration(value: number | null): string {
 
 function assetSummary(asset: MediaAsset): string {
   const resolution = asset.width && asset.height ? `${asset.width}×${asset.height}` : "Unknown size";
+  if (asset.type === "IMAGE") return resolution;
   const fps = asset.fps ? `${asset.fps.toFixed(2)} FPS` : "Unknown FPS";
   return `${resolution} · ${fps}`;
+}
+
+function isActiveJob(job: Job | null): boolean {
+  return job?.state === "QUEUED" || job?.state === "RUNNING";
 }
 
 export function ProjectsWorkspace() {
@@ -56,6 +63,7 @@ export function ProjectsWorkspace() {
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [activeJob, setActiveJob] = useState<Job | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -125,6 +133,35 @@ export function ProjectsWorkspace() {
     };
   }, [selectedAsset]);
 
+  useEffect(() => {
+    if (!activeJob || !isActiveJob(activeJob)) return;
+
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      void getJob(activeJob.id)
+        .then(async (job) => {
+          if (cancelled) return;
+          setActiveJob(job);
+          if (job.state === "SUCCEEDED" && selectedProjectId) {
+            const assetIds = Array.isArray(job.result.asset_ids)
+              ? job.result.asset_ids.filter((value): value is string => typeof value === "string")
+              : [];
+            await refreshAssets(selectedProjectId, assetIds[0]);
+          }
+        })
+        .catch((cause: unknown) => {
+          if (!cancelled) {
+            setError(cause instanceof Error ? cause.message : "Could not refresh job");
+          }
+        });
+    }, 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeJob?.id, activeJob?.state, selectedProjectId]);
+
   async function handleCreateProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = newProjectName.trim();
@@ -162,6 +199,19 @@ export function ProjectsWorkspace() {
       setError(cause instanceof Error ? cause.message : "Upload failed");
     } finally {
       setIsUploading(false);
+    }
+  }
+
+  async function handleExtractKeyframes() {
+    if (!selectedAsset || selectedAsset.type !== "VIDEO" || selectedAsset.status !== "READY") return;
+    if (isActiveJob(activeJob)) return;
+
+    setError(null);
+    try {
+      const job = await createKeyframeJob(selectedAsset.id, 8);
+      setActiveJob(job);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create keyframe job");
     }
   }
 
@@ -343,6 +393,12 @@ export function ProjectsWorkspace() {
             <div className="videoPreview">
               {previewUrl && selectedAsset.type === "VIDEO" ? (
                 <video controls key={previewUrl} preload="metadata" src={previewUrl} />
+              ) : previewUrl && selectedAsset.type === "IMAGE" ? (
+                <img
+                  alt={selectedAsset.filename}
+                  src={previewUrl}
+                  style={{ display: "block", maxHeight: 360, objectFit: "contain", width: "100%" }}
+                />
               ) : (
                 <div className="previewLoading">{selectedAsset.status === "READY" ? "Loading preview…" : selectedAsset.status}</div>
               )}
@@ -358,6 +414,35 @@ export function ProjectsWorkspace() {
               <div><dt>Audio codec</dt><dd>{selectedAsset.audio_codec ?? "—"}</dd></div>
               <div><dt>Frames</dt><dd>{selectedAsset.frame_count ?? "—"}</dd></div>
             </dl>
+
+            {selectedAsset.type === "VIDEO" && selectedAsset.status === "READY" ? (
+              <button
+                className="primary"
+                disabled={isActiveJob(activeJob)}
+                onClick={() => void handleExtractKeyframes()}
+                style={{ width: "100%" }}
+                type="button"
+              >
+                {isActiveJob(activeJob) ? "Extracting keyframes…" : "Extract 8 keyframes"}
+              </button>
+            ) : null}
+
+            {activeJob && activeJob.input_asset_id === selectedAsset.id ? (
+              <div className="uploadProgress panel" style={{ marginTop: 14 }}>
+                <div className="progressHeader">
+                  <div>
+                    <strong>{activeJob.state}</strong>
+                    <span className="muted small">{activeJob.stage ?? activeJob.type}</span>
+                  </div>
+                  <span className="status">{Math.round(activeJob.progress * 100)}%</span>
+                </div>
+                <div className="progressTrack">
+                  <div style={{ width: `${Math.round(activeJob.progress * 100)}%` }} />
+                </div>
+                {activeJob.error ? <p className="errorText small">{activeJob.error}</p> : null}
+              </div>
+            ) : null}
+
             {typeof selectedAsset.metadata.probe_error === "string" ? (
               <p className="errorText small">ffprobe: {selectedAsset.metadata.probe_error}</p>
             ) : null}
