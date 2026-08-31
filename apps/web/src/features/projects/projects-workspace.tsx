@@ -2,11 +2,26 @@
 
 import type { DragEvent, FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { Images, ScanSearch, Trash2 } from "lucide-react";
+import {
+  FileJson,
+  Film,
+  Image as ImageIcon,
+  Images,
+  Plus,
+  ScanSearch,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import type { Job, MediaAsset, Project, Shot } from "@videoweave/contracts";
 
+import { AppShell } from "@/components/app-shell";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
 import { uploadVideo, type UploadProgress } from "@/features/assets/multipart-upload";
 import {
   clearVideoAnalysisOutputs,
@@ -19,11 +34,7 @@ import {
   listProjectAssets,
   listProjects,
 } from "@/lib/api";
-
-const navigation = [
-  ["Workspace", "/"],
-  ["Projects", "/projects"],
-] as const;
+import { cn } from "@/lib/utils";
 
 function formatBytes(value: number | null): string {
   if (value == null) return "—";
@@ -67,10 +78,20 @@ function metadataSourceAssetId(value: unknown): string | null {
 function analysisSourceAssetId(asset: MediaAsset | null): string | null {
   if (!asset) return null;
   if (asset.type === "VIDEO") return asset.id;
-  return (
-    metadataSourceAssetId(asset.metadata.analysis) ??
-    metadataSourceAssetId(asset.metadata.shot_representative)
-  );
+  return metadataSourceAssetId(asset.metadata.analysis) ?? metadataSourceAssetId(asset.metadata.shot_representative);
+}
+
+function assetStatusVariant(status: MediaAsset["status"]): "success" | "warning" | "destructive" | "outline" {
+  if (status === "READY") return "success";
+  if (status === "UPLOADING" || status === "PROCESSING") return "warning";
+  if (status === "FAILED" || status === "CANCELLED") return "destructive";
+  return "outline";
+}
+
+function assetIcon(asset: MediaAsset) {
+  if (asset.type === "VIDEO") return Film;
+  if (asset.type === "ANALYSIS") return FileJson;
+  return ImageIcon;
 }
 
 export function ProjectsWorkspace() {
@@ -97,9 +118,7 @@ export function ProjectsWorkspace() {
     const nextProjects = await listProjects();
     setProjects(nextProjects);
     setSelectedProjectId((current) => {
-      if (preferredProjectId && nextProjects.some((project) => project.id === preferredProjectId)) {
-        return preferredProjectId;
-      }
+      if (preferredProjectId && nextProjects.some((project) => project.id === preferredProjectId)) return preferredProjectId;
       if (current && nextProjects.some((project) => project.id === current)) return current;
       return nextProjects[0]?.id ?? null;
     });
@@ -109,9 +128,7 @@ export function ProjectsWorkspace() {
     const nextAssets = await listProjectAssets(projectId);
     setAssets(nextAssets);
     setSelectedAsset((current) => {
-      if (preferredAssetId) {
-        return nextAssets.find((asset) => asset.id === preferredAssetId) ?? current;
-      }
+      if (preferredAssetId) return nextAssets.find((asset) => asset.id === preferredAssetId) ?? current;
       if (current) return nextAssets.find((asset) => asset.id === current.id) ?? null;
       return nextAssets[0] ?? null;
     });
@@ -129,7 +146,6 @@ export function ProjectsWorkspace() {
       setSelectedAsset(null);
       return;
     }
-
     setError(null);
     void refreshAssets(selectedProjectId).catch((cause: unknown) => {
       setError(cause instanceof Error ? cause.message : "Could not load project assets");
@@ -139,7 +155,6 @@ export function ProjectsWorkspace() {
   useEffect(() => {
     let cancelled = false;
     setPreviewUrl(null);
-
     if (!selectedAsset || selectedAsset.status !== "READY") return;
 
     void getAssetAccess(selectedAsset.id)
@@ -147,9 +162,7 @@ export function ProjectsWorkspace() {
         if (!cancelled) setPreviewUrl(access.url);
       })
       .catch((cause: unknown) => {
-        if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : "Could not create preview URL");
-        }
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not create preview URL");
       });
 
     return () => {
@@ -167,9 +180,7 @@ export function ProjectsWorkspace() {
         if (!cancelled) setShots(nextShots);
       })
       .catch((cause: unknown) => {
-        if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : "Could not load shots");
-        }
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load shots");
       });
 
     return () => {
@@ -194,16 +205,12 @@ export function ProjectsWorkspace() {
               await refreshAssets(selectedProjectId, assetIds[0]);
             } else {
               await refreshAssets(selectedProjectId);
-              if (job.input_asset_id) {
-                setShots(await listAssetShots(job.input_asset_id));
-              }
+              if (job.input_asset_id) setShots(await listAssetShots(job.input_asset_id));
             }
           }
         })
         .catch((cause: unknown) => {
-          if (!cancelled) {
-            setError(cause instanceof Error ? cause.message : "Could not refresh job");
-          }
+          if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not refresh job");
         });
     }, 1000);
 
@@ -241,7 +248,6 @@ export function ProjectsWorkspace() {
     setIsUploading(true);
     setUploadProgress(null);
     setError(null);
-
     try {
       const asset = await uploadVideo(selectedProjectId, file, setUploadProgress);
       await refreshAssets(selectedProjectId, asset.id);
@@ -254,9 +260,7 @@ export function ProjectsWorkspace() {
   }
 
   async function handleExtractKeyframes() {
-    if (!selectedAsset || selectedAsset.type !== "VIDEO" || selectedAsset.status !== "READY") return;
-    if (isActiveJob(activeJob)) return;
-
+    if (!selectedAsset || selectedAsset.type !== "VIDEO" || selectedAsset.status !== "READY" || isActiveJob(activeJob)) return;
     setError(null);
     try {
       setActiveJob(await createKeyframeJob(selectedAsset.id, 8));
@@ -266,9 +270,7 @@ export function ProjectsWorkspace() {
   }
 
   async function handleAnalyzeVideo() {
-    if (!selectedAsset || selectedAsset.type !== "VIDEO" || selectedAsset.status !== "READY") return;
-    if (isActiveJob(activeJob)) return;
-
+    if (!selectedAsset || selectedAsset.type !== "VIDEO" || selectedAsset.status !== "READY" || isActiveJob(activeJob)) return;
     setError(null);
     try {
       setActiveJob(await createVideoAnalysisJob(selectedAsset.id, 10));
@@ -278,11 +280,8 @@ export function ProjectsWorkspace() {
   }
 
   async function handleClearAnalysisOutputs() {
-    if (!cleanupSourceAssetId || !selectedProjectId) return;
-    if (isActiveJob(activeJob) || isClearingAnalysis) return;
-    if (!window.confirm("Clear generated shot frames and analysis outputs for this video? The source video and extracted keyframes are kept.")) {
-      return;
-    }
+    if (!cleanupSourceAssetId || !selectedProjectId || isActiveJob(activeJob) || isClearingAnalysis) return;
+    if (!window.confirm("Clear generated shot frames and analysis outputs for this video? The source video and extracted keyframes are kept.")) return;
 
     const sourceAssetId = cleanupSourceAssetId;
     setIsClearingAnalysis(true);
@@ -312,289 +311,224 @@ export function ProjectsWorkspace() {
     if (representative) setSelectedAsset(representative);
   }
 
-  return (
-    <main className="shell">
-      <aside className="sidebar">
-        <div className="brand">VideoWeave</div>
-        <nav>
-          {navigation.map(([label, href]) => (
-            <Link className={label === "Projects" ? "navItem active" : "navItem"} href={href} key={label}>
-              {label}
-            </Link>
-          ))}
-          {["Assets", "Generate", "Replication", "Storyboard", "Jobs", "Results", "Models", "Workflows", "Settings"].map(
-            (item) => (
-              <span className="navItem navItemDisabled" key={item}>{item}</span>
-            ),
-          )}
-        </nav>
-      </aside>
+  const inspector = selectedAsset ? (
+    <div className="space-y-5">
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Asset inspector</p>
+        <h2 className="mt-1 break-words text-lg font-semibold tracking-tight">{selectedAsset.filename}</h2>
+      </div>
 
-      <section className="workspace">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">P0 · REAL DATA</p>
-            <h1>Projects & Assets</h1>
+      <div className="grid aspect-video place-items-center overflow-hidden rounded-xl border bg-black/70">
+        {previewUrl && selectedAsset.type === "VIDEO" ? (
+          <video className="h-full w-full object-contain" controls key={previewUrl} preload="metadata" src={previewUrl} />
+        ) : previewUrl && selectedAsset.type === "IMAGE" ? (
+          <img alt={selectedAsset.filename} className="h-full w-full object-contain" src={previewUrl} />
+        ) : previewUrl && selectedAsset.type === "ANALYSIS" ? (
+          <Button asChild variant="secondary"><a href={previewUrl} rel="noreferrer" target="_blank"><FileJson /> Open analysis JSON</a></Button>
+        ) : (
+          <span className="text-sm text-muted-foreground">{selectedAsset.status === "READY" ? "Loading preview…" : selectedAsset.status}</span>
+        )}
+      </div>
+
+      <div className="space-y-2 text-sm">
+        {[
+          ["Status", selectedAsset.status],
+          ["Type", selectedAsset.type],
+          ["Size", formatBytes(selectedAsset.size)],
+          ["Resolution", selectedAsset.width && selectedAsset.height ? `${selectedAsset.width}×${selectedAsset.height}` : "—"],
+          ["Duration", formatDuration(selectedAsset.duration)],
+          ["FPS", selectedAsset.fps?.toFixed(3) ?? "—"],
+          ["Video codec", selectedAsset.codec ?? "—"],
+          ["Audio codec", selectedAsset.audio_codec ?? "—"],
+          ["Frames", selectedAsset.frame_count ?? "—"],
+        ].map(([label, value], index) => (
+          <div key={String(label)}>
+            {index > 0 ? <Separator className="mb-2" /> : null}
+            <div className="flex items-start justify-between gap-4">
+              <span className="text-muted-foreground">{label}</span>
+              <span className="max-w-[60%] break-words text-right">{value}</span>
+            </div>
           </div>
-          <div className="status">{projects.length} projects · {assets.length} assets</div>
-        </header>
+        ))}
+      </div>
 
-        {error ? <div className="errorBanner">{error}</div> : null}
+      {selectedAsset.type === "VIDEO" && selectedAsset.status === "READY" ? (
+        <div className="grid gap-2">
+          <Button className="w-full justify-start" disabled={isActiveJob(activeJob) || isClearingAnalysis} onClick={() => void handleAnalyzeVideo()}>
+            <ScanSearch />
+            {isActiveJob(activeJob) && activeJob?.type === "video-analysis" ? "Analyzing video…" : "Analyze video structure"}
+          </Button>
+          <Button className="w-full justify-start" disabled={isActiveJob(activeJob) || isClearingAnalysis} onClick={() => void handleExtractKeyframes()} variant="secondary">
+            <Images />
+            {isActiveJob(activeJob) && activeJob?.type === "keyframe-extraction" ? "Extracting keyframes…" : "Extract 8 keyframes"}
+          </Button>
+        </div>
+      ) : null}
 
-        <section className="projectLayout">
-          <aside className="projectRail panel">
-            <div className="sectionTitle compact">
-              <div>
-                <p className="eyebrow">PROJECTS</p>
-                <h2>Your workspaces</h2>
+      {cleanupSourceAssetId ? (
+        <div className="space-y-2">
+          <Button className="w-full justify-start" disabled={isActiveJob(activeJob) || isClearingAnalysis} onClick={() => void handleClearAnalysisOutputs()} variant="destructive">
+            <Trash2 /> {isClearingAnalysis ? "Clearing analysis outputs…" : "Clear analysis outputs"}
+          </Button>
+          <p className="text-xs leading-5 text-red-300/80">Deletes generated shot frames and analysis JSON. Source video and extracted keyframes stay.</p>
+        </div>
+      ) : null}
+
+      {activeJob && activeJob.input_asset_id === selectedAsset.id ? (
+        <Card>
+          <CardContent className="space-y-3 p-4">
+            <div className="flex items-start justify-between gap-3 text-sm">
+              <div><div className="font-medium">{activeJob.state}</div><div className="text-xs text-muted-foreground">{activeJob.stage ?? activeJob.type}</div></div>
+              <Badge variant="outline">{Math.round(activeJob.progress * 100)}%</Badge>
+            </div>
+            <Progress value={activeJob.progress * 100} />
+            {activeJob.error ? <p className="text-xs leading-5 text-red-300">{activeJob.error}</p> : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {selectedAsset.type === "VIDEO" && shots.length > 0 ? (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Latest shot analysis</p>
+            <Badge variant="secondary">{shots.length} shots</Badge>
+          </div>
+          <div className="grid max-h-72 gap-1 overflow-y-auto pr-1">
+            {shots.map((shot) => (
+              <Button className="h-auto justify-start whitespace-normal px-3 py-2 text-left" key={shot.id} onClick={() => selectShotRepresentative(shot)} variant="ghost">
+                <span><span className="block font-medium">Shot {shot.index}</span><span className="block text-xs text-muted-foreground">{shot.start_time.toFixed(2)}s → {shot.end_time.toFixed(2)}s · {formatDuration(shot.duration)}</span></span>
+              </Button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {typeof selectedAsset.metadata.probe_error === "string" ? <p className="text-xs leading-5 text-red-300">ffprobe: {selectedAsset.metadata.probe_error}</p> : null}
+    </div>
+  ) : (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Asset inspector</p>
+      <h2 className="mt-1 text-lg font-semibold">No asset selected</h2>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">Upload or select an asset to inspect its preview and metadata.</p>
+    </div>
+  );
+
+  return (
+    <AppShell
+      active="projects"
+      eyebrow="P0 · REAL DATA"
+      inspector={inspector}
+      status={`${projects.length} projects · ${assets.length} assets`}
+      title="Projects & Assets"
+    >
+      <div className="space-y-5">
+        {error ? <Alert><AlertTitle>Request failed</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
+
+        <div className="grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
+          <Card className="h-fit lg:sticky lg:top-6">
+            <CardHeader>
+              <CardTitle className="text-base">Projects</CardTitle>
+              <CardDescription>Create a workspace or switch the active project.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <form className="flex gap-2" onSubmit={handleCreateProject}>
+                <Input aria-label="Project name" onChange={(event) => setNewProjectName(event.target.value)} placeholder="New project" value={newProjectName} />
+                <Button aria-label="Create project" disabled={isCreatingProject || !newProjectName.trim()} size="icon" type="submit"><Plus /></Button>
+              </form>
+
+              <div className="grid gap-1">
+                {projects.map((project) => (
+                  <Button
+                    className="h-auto w-full justify-start whitespace-normal px-3 py-2 text-left"
+                    key={project.id}
+                    onClick={() => setSelectedProjectId(project.id)}
+                    variant={project.id === selectedProjectId ? "secondary" : "ghost"}
+                  >
+                    <span className="min-w-0"><span className="block truncate font-medium">{project.name}</span><span className="block text-xs text-muted-foreground">{new Date(project.created_at).toLocaleDateString()}</span></span>
+                  </Button>
+                ))}
+                {projects.length === 0 ? <p className="py-3 text-sm text-muted-foreground">Create the first project to upload media.</p> : null}
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            <form className="newProjectForm" onSubmit={handleCreateProject}>
-              <input
-                aria-label="Project name"
-                onChange={(event) => setNewProjectName(event.target.value)}
-                placeholder="New project name"
-                value={newProjectName}
-              />
-              <button className="primary" disabled={isCreatingProject || !newProjectName.trim()} type="submit">
-                {isCreatingProject ? "Creating…" : "Create"}
-              </button>
-            </form>
-
-            <div className="projectList">
-              {projects.map((project) => (
-                <button
-                  className={project.id === selectedProjectId ? "projectItem active" : "projectItem"}
-                  key={project.id}
-                  onClick={() => setSelectedProjectId(project.id)}
-                  type="button"
-                >
-                  <strong>{project.name}</strong>
-                  <span>{new Date(project.created_at).toLocaleDateString()}</span>
-                </button>
-              ))}
-              {projects.length === 0 ? <p className="muted small">Create the first project to upload media.</p> : null}
-            </div>
-          </aside>
-
-          <div className="assetArea">
-            <section
-              className={isDragging ? "uploadZone panel dragging" : "uploadZone panel"}
+          <div className="min-w-0 space-y-5">
+            <Card
+              className={cn("border-dashed transition-colors", isDragging && "border-ring bg-accent/25")}
               onDragEnter={(event) => { event.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
               onDragOver={(event) => event.preventDefault()}
               onDrop={handleDrop}
             >
-              <div>
-                <p className="eyebrow">DIRECT TO S3</p>
-                <h2>{selectedProject ? `Upload to ${selectedProject.name}` : "Select a project"}</h2>
-                <p className="muted">
-                  Video parts go directly from the browser to S3/MinIO. The API only signs and finalizes the upload.
-                </p>
-              </div>
-              <input
-                accept="video/*,.mkv,.m4v"
-                hidden
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) void handleFile(file);
-                  event.target.value = "";
-                }}
-                ref={fileInputRef}
-                type="file"
-              />
-              <button
-                className="primary"
-                disabled={!selectedProjectId || isUploading}
-                onClick={() => fileInputRef.current?.click()}
-                type="button"
-              >
-                {isUploading ? "Uploading…" : "Choose video"}
-              </button>
-            </section>
+              <CardContent className="flex flex-col gap-5 p-6 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="mb-3 grid size-10 place-items-center rounded-lg bg-secondary"><Upload className="size-5" /></div>
+                  <CardTitle className="text-lg">{selectedProject ? `Upload to ${selectedProject.name}` : "Select a project"}</CardTitle>
+                  <CardDescription className="mt-2 max-w-2xl">Video parts go directly from the browser to S3/MinIO. The API only signs and finalizes the multipart upload.</CardDescription>
+                </div>
+                <input
+                  accept="video/*,.mkv,.m4v"
+                  hidden
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void handleFile(file);
+                    event.target.value = "";
+                  }}
+                  ref={fileInputRef}
+                  type="file"
+                />
+                <Button disabled={!selectedProjectId || isUploading} onClick={() => fileInputRef.current?.click()}>
+                  <Upload /> {isUploading ? "Uploading…" : "Choose video"}
+                </Button>
+              </CardContent>
+            </Card>
 
             {uploadProgress ? (
-              <section className="uploadProgress panel">
-                <div className="progressHeader">
-                  <div>
-                    <strong>{uploadProgress.percent}% uploaded</strong>
-                    <span className="muted small">
-                      {formatBytes(uploadProgress.uploadedBytes)} / {formatBytes(uploadProgress.totalBytes)}
-                    </span>
+              <Card>
+                <CardContent className="space-y-3 p-4">
+                  <div className="flex items-start justify-between gap-4 text-sm">
+                    <div><div className="font-medium">{uploadProgress.percent}% uploaded</div><div className="text-xs text-muted-foreground">{formatBytes(uploadProgress.uploadedBytes)} / {formatBytes(uploadProgress.totalBytes)}</div></div>
+                    <Badge variant="outline">{uploadProgress.resumed ? "Resumed · " : ""}part {Math.max(uploadProgress.partNumber, 1)}/{uploadProgress.totalParts}</Badge>
                   </div>
-                  <span className="status">
-                    {uploadProgress.resumed ? "Resumed · " : ""}
-                    part {Math.max(uploadProgress.partNumber, 1)}/{uploadProgress.totalParts}
-                  </span>
-                </div>
-                <div className="progressTrack"><div style={{ width: `${uploadProgress.percent}%` }} /></div>
-              </section>
+                  <Progress value={uploadProgress.percent} />
+                </CardContent>
+              </Card>
             ) : null}
 
             <section>
-              <div className="sectionTitle">
-                <div>
-                  <p className="eyebrow">ASSETS</p>
-                  <h2>{selectedProject ? selectedProject.name : "No project selected"}</h2>
-                </div>
-                <span className="muted">{assets.length} media assets</span>
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Assets</p><h2 className="mt-1 text-xl font-semibold tracking-tight">{selectedProject ? selectedProject.name : "No project selected"}</h2></div>
+                <Badge variant="outline">{assets.length} media assets</Badge>
               </div>
 
-              <div className="assetGrid">
-                {assets.map((asset) => (
-                  <button
-                    className={selectedAsset?.id === asset.id ? "assetCard active" : "assetCard"}
-                    key={asset.id}
-                    onClick={() => setSelectedAsset(asset)}
-                    type="button"
-                  >
-                    <div className="assetPreviewPlaceholder">
-                      <span>{asset.type}</span>
-                    </div>
-                    <div className="assetCardBody">
-                      <strong title={asset.filename}>{asset.filename}</strong>
-                      <span>{assetSummary(asset)}</span>
-                      <div className="assetCardFooter">
-                        <span>{formatBytes(asset.size)}</span>
-                        <span className={`assetStatus ${asset.status.toLowerCase()}`}>{asset.status}</span>
+              <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                {assets.map((asset) => {
+                  const Icon = assetIcon(asset);
+                  const selected = selectedAsset?.id === asset.id;
+                  return (
+                    <button
+                      className={cn("overflow-hidden rounded-xl border bg-card text-left shadow-sm transition-colors hover:border-ring/60 hover:bg-accent/20", selected && "border-ring bg-accent/25")}
+                      key={asset.id}
+                      onClick={() => setSelectedAsset(asset)}
+                      type="button"
+                    >
+                      <div className="grid aspect-video place-items-center border-b bg-black/20 text-muted-foreground"><Icon className="size-7" /></div>
+                      <div className="space-y-3 p-4">
+                        <div><div className="truncate text-sm font-medium" title={asset.filename}>{asset.filename}</div><div className="mt-1 text-xs text-muted-foreground">{assetSummary(asset)}</div></div>
+                        <div className="flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">{formatBytes(asset.size)}</span><Badge variant={assetStatusVariant(asset.status)}>{asset.status}</Badge></div>
                       </div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
 
               {selectedProject && assets.length === 0 ? (
-                <div className="emptyState panel">
-                  <h3>No assets yet</h3>
-                  <p className="muted">Drop a video above. This is now connected to the real multipart upload API.</p>
-                </div>
+                <Card className="border-dashed"><CardContent className="py-12 text-center"><ImageIcon className="mx-auto size-7 text-muted-foreground" /><h3 className="mt-3 font-medium">No assets yet</h3><p className="mt-1 text-sm text-muted-foreground">Drop a video above to start the real multipart upload flow.</p></CardContent></Card>
               ) : null}
             </section>
           </div>
-        </section>
-      </section>
-
-      <aside className="inspector assetInspector">
-        <p className="eyebrow">ASSET INSPECTOR</p>
-        {selectedAsset ? (
-          <>
-            <h2>{selectedAsset.filename}</h2>
-            <div className="videoPreview">
-              {previewUrl && selectedAsset.type === "VIDEO" ? (
-                <video controls key={previewUrl} preload="metadata" src={previewUrl} />
-              ) : previewUrl && selectedAsset.type === "IMAGE" ? (
-                <img
-                  alt={selectedAsset.filename}
-                  src={previewUrl}
-                  style={{ display: "block", maxHeight: 360, objectFit: "contain", width: "100%" }}
-                />
-              ) : previewUrl && selectedAsset.type === "ANALYSIS" ? (
-                <a className="primary" href={previewUrl} rel="noreferrer" target="_blank">Open analysis JSON</a>
-              ) : (
-                <div className="previewLoading">{selectedAsset.status === "READY" ? "Loading preview…" : selectedAsset.status}</div>
-              )}
-            </div>
-            <dl>
-              <div><dt>Status</dt><dd>{selectedAsset.status}</dd></div>
-              <div><dt>Type</dt><dd>{selectedAsset.type}</dd></div>
-              <div><dt>Size</dt><dd>{formatBytes(selectedAsset.size)}</dd></div>
-              <div><dt>Resolution</dt><dd>{selectedAsset.width && selectedAsset.height ? `${selectedAsset.width}×${selectedAsset.height}` : "—"}</dd></div>
-              <div><dt>Duration</dt><dd>{formatDuration(selectedAsset.duration)}</dd></div>
-              <div><dt>FPS</dt><dd>{selectedAsset.fps?.toFixed(3) ?? "—"}</dd></div>
-              <div><dt>Video codec</dt><dd>{selectedAsset.codec ?? "—"}</dd></div>
-              <div><dt>Audio codec</dt><dd>{selectedAsset.audio_codec ?? "—"}</dd></div>
-              <div><dt>Frames</dt><dd>{selectedAsset.frame_count ?? "—"}</dd></div>
-            </dl>
-
-            {selectedAsset.type === "VIDEO" && selectedAsset.status === "READY" ? (
-              <div className="grid gap-2">
-                <Button
-                  className="w-full justify-start"
-                  disabled={isActiveJob(activeJob) || isClearingAnalysis}
-                  onClick={() => void handleAnalyzeVideo()}
-                  type="button"
-                >
-                  <ScanSearch />
-                  {isActiveJob(activeJob) && activeJob?.type === "video-analysis" ? "Analyzing video…" : "Analyze video structure"}
-                </Button>
-                <Button
-                  className="w-full justify-start"
-                  disabled={isActiveJob(activeJob) || isClearingAnalysis}
-                  onClick={() => void handleExtractKeyframes()}
-                  type="button"
-                  variant="secondary"
-                >
-                  <Images />
-                  {isActiveJob(activeJob) && activeJob?.type === "keyframe-extraction" ? "Extracting keyframes…" : "Extract 8 keyframes"}
-                </Button>
-              </div>
-            ) : null}
-
-            {cleanupSourceAssetId ? (
-              <div className="mt-2 grid gap-1">
-                <Button
-                  className="w-full justify-start"
-                  disabled={isActiveJob(activeJob) || isClearingAnalysis}
-                  onClick={() => void handleClearAnalysisOutputs()}
-                  type="button"
-                  variant="destructive"
-                >
-                  <Trash2 />
-                  {isClearingAnalysis ? "Clearing analysis outputs…" : "Clear analysis outputs"}
-                </Button>
-                <p className="mb-0 px-1 text-xs text-red-300/80">
-                  Deletes generated shot frames and analysis JSON. Source video and extracted keyframes stay.
-                </p>
-              </div>
-            ) : null}
-
-            {activeJob && activeJob.input_asset_id === selectedAsset.id ? (
-              <div className="uploadProgress panel" style={{ marginTop: 14 }}>
-                <div className="progressHeader">
-                  <div>
-                    <strong>{activeJob.state}</strong>
-                    <span className="muted small">{activeJob.stage ?? activeJob.type}</span>
-                  </div>
-                  <span className="status">{Math.round(activeJob.progress * 100)}%</span>
-                </div>
-                <div className="progressTrack">
-                  <div style={{ width: `${Math.round(activeJob.progress * 100)}%` }} />
-                </div>
-                {activeJob.error ? <p className="errorText small">{activeJob.error}</p> : null}
-              </div>
-            ) : null}
-
-            {selectedAsset.type === "VIDEO" && shots.length > 0 ? (
-              <section style={{ marginTop: 18 }}>
-                <p className="eyebrow">LATEST SHOT ANALYSIS · {shots.length} SHOTS</p>
-                <div style={{ display: "grid", gap: 6 }}>
-                  {shots.map((shot) => (
-                    <button
-                      className="projectItem"
-                      key={shot.id}
-                      onClick={() => selectShotRepresentative(shot)}
-                      type="button"
-                    >
-                      <strong>Shot {shot.index}</strong>
-                      <span>{shot.start_time.toFixed(2)}s → {shot.end_time.toFixed(2)}s · {formatDuration(shot.duration)}</span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            {typeof selectedAsset.metadata.probe_error === "string" ? (
-              <p className="errorText small">ffprobe: {selectedAsset.metadata.probe_error}</p>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <h2>No asset selected</h2>
-            <p className="muted small">Upload or select an asset to inspect its video preview and metadata.</p>
-          </>
-        )}
-      </aside>
-    </main>
+        </div>
+      </div>
+    </AppShell>
   );
 }
