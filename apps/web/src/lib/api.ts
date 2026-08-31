@@ -1,0 +1,95 @@
+import type {
+  AssetAccess,
+  MediaAsset,
+  Project,
+  UploadPartAccess,
+  UploadSession,
+  UploadStatusResponse,
+  UploadedPart,
+} from "@videoweave/contracts";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `${response.status} ${response.statusText}`);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json() as Promise<T>;
+}
+
+export function listProjects(): Promise<Project[]> {
+  return request<Project[]>("/v1/projects");
+}
+
+export function createProject(name: string): Promise<Project> {
+  return request<Project>("/v1/projects", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function listProjectAssets(projectId: string): Promise<MediaAsset[]> {
+  return request<MediaAsset[]>(`/v1/projects/${projectId}/assets`);
+}
+
+export function getAssetAccess(assetId: string): Promise<AssetAccess> {
+  return request<AssetAccess>(`/v1/assets/${assetId}/access`);
+}
+
+export function initializeUpload(projectId: string, file: File): Promise<UploadSession> {
+  return request<UploadSession>(`/v1/projects/${projectId}/uploads`, {
+    method: "POST",
+    body: JSON.stringify({
+      filename: file.name,
+      mime_type: file.type || null,
+      size: file.size,
+      asset_type: "VIDEO",
+    }),
+  });
+}
+
+export function getUploadStatus(uploadSessionId: string): Promise<UploadStatusResponse> {
+  return request<UploadStatusResponse>(`/v1/uploads/${uploadSessionId}`);
+}
+
+export function createUploadPartAccess(
+  uploadSessionId: string,
+  partNumber: number,
+): Promise<UploadPartAccess> {
+  return request<UploadPartAccess>(`/v1/uploads/${uploadSessionId}/parts/${partNumber}`, {
+    method: "POST",
+  });
+}
+
+export function completeUpload(
+  uploadSessionId: string,
+  parts: UploadedPart[],
+): Promise<MediaAsset> {
+  return request<MediaAsset>(`/v1/uploads/${uploadSessionId}/complete`, {
+    method: "POST",
+    body: JSON.stringify({
+      parts: parts.map((part) => ({
+        part_number: part.part_number,
+        etag: part.etag,
+      })),
+    }),
+  });
+}
+
+export function abortUpload(uploadSessionId: string): Promise<void> {
+  return request<void>(`/v1/uploads/${uploadSessionId}`, { method: "DELETE" });
+}
