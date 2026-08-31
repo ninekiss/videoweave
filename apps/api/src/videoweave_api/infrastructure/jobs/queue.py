@@ -1,4 +1,5 @@
 from redis import Redis
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from videoweave_api.core.config import Settings
 
@@ -17,7 +18,14 @@ class RedisJobQueue:
         self.client.rpush(self.key, job_id)
 
     def pop(self, timeout: int) -> str | None:
-        item = self.client.blpop(self.key, timeout=timeout)
+        try:
+            item = self.client.blpop(self.key, timeout=timeout)
+        except RedisTimeoutError:
+            # A blocking pop timing out just means the queue is idle. Some
+            # redis-py/platform combinations surface this as a socket timeout
+            # instead of returning None when the BLPOP wait expires.
+            return None
+
         if item is None:
             return None
         _, job_id = item
