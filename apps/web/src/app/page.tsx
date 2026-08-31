@@ -1,16 +1,9 @@
+import Link from "next/link";
+
 const navigation = [
-  "Workspace",
-  "Projects",
-  "Assets",
-  "Generate",
-  "Replication",
-  "Storyboard",
-  "Jobs",
-  "Results",
-  "Models",
-  "Workflows",
-  "Settings",
-];
+  ["Workspace", "/"],
+  ["Projects", "/projects"],
+] as const;
 
 const quickActions = [
   ["Generate video", "Text, image and keyframe-driven generation"],
@@ -25,11 +18,14 @@ export default function Home() {
       <aside className="sidebar">
         <div className="brand">VideoWeave</div>
         <nav>
-          {navigation.map((item, index) => (
-            <button className={index === 0 ? "navItem active" : "navItem"} key={item} type="button">
+          {navigation.map(([item, href], index) => (
+            <Link className={index === 0 ? "navItem active" : "navItem"} href={href} key={item}>
               {item}
-            </button>
+            </Link>
           ))}
+          {["Assets", "Generate", "Replication", "Storyboard", "Jobs", "Results", "Models", "Workflows", "Settings"].map(
+            (item) => <span className="navItem navItemDisabled" key={item}>{item}</span>,
+          )}
         </nav>
       </aside>
 
@@ -39,7 +35,7 @@ export default function Home() {
             <p className="eyebrow">VIDEO AI WORKBENCH</p>
             <h1>Workspace</h1>
           </div>
-          <div className="status">Platform scaffold · P0</div>
+          <div className="status">Platform foundation · P0</div>
         </header>
 
         <section className="hero panel">
@@ -50,13 +46,13 @@ export default function Home() {
               The UI stays stable while models, workflows, workers and storage providers evolve behind adapters.
             </p>
           </div>
-          <button className="primary" type="button">New project</button>
+          <Link className="primary" href="/projects">Open projects</Link>
         </section>
 
         <section>
           <div className="sectionTitle">
             <h2>Quick actions</h2>
-            <span className="muted">Initial information architecture</span>
+            <span className="muted">Projects and direct media upload are now live</span>
           </div>
           <div className="grid">
             {quickActions.map(([title, description]) => (
@@ -71,31 +67,27 @@ export default function Home() {
 
         <section className="panel split">
           <div>
-            <p className="eyebrow">ACTIVE JOBS</p>
-            <h2>No jobs yet</h2>
-            <p className="muted">Generation and processing operations will appear here as asynchronous jobs.</p>
+            <p className="eyebrow">CURRENT VERTICAL SLICE</p>
+            <h2>Project → Asset → S3</h2>
+            <p className="muted">Create a project, upload video directly to MinIO/S3, then inspect the real ffprobe metadata.</p>
           </div>
           <div>
             <p className="eyebrow">INFRASTRUCTURE</p>
             <ul className="infraList">
               <li><span /> API control plane</li>
               <li><span /> S3-compatible assets</li>
-              <li><span /> GPU / CPU workers</li>
+              <li><span /> Multipart resumable upload</li>
             </ul>
           </div>
         </section>
       </section>
 
       <aside className="inspector">
-        <p className="eyebrow">INSPECTOR</p>
-        <h2>Workspace status</h2>
-        <dl>
-          <div><dt>Phase</dt><dd>P0</dd></div>
-          <div><dt>Projects</dt><dd>0</dd></div>
-          <div><dt>Jobs</dt><dd>0</dd></div>
-          <div><dt>Workers</dt><dd>Not connected</dd></div>
-        </dl>
-        <p className="muted small">This page is the initial visual shell, not a mock implementation of unfinished backend capabilities.</p>
+        <p className="eyebrow">NEXT</p>
+        <h2>Validate the asset flow</h2>
+        <p className="muted small">
+          Open Projects, create a project, upload a real video, and verify preview plus metadata. Job/Worker comes after this UI slice is stable.
+        </p>
       </aside>
     </main>
   );
