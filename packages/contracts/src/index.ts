@@ -70,10 +70,21 @@ export interface MediaAsset {
   created_at: string;
 }
 
+export interface AssetAccess {
+  url: string;
+  expires_in: number;
+}
+
 export interface UploadSession {
   upload_session_id: string;
   asset_id: string;
   part_size: number;
+}
+
+export interface UploadPartAccess {
+  part_number: number;
+  url: string;
+  expires_in: number;
 }
 
 export interface UploadedPart {
