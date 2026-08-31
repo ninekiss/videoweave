@@ -56,6 +56,21 @@ function isActiveJob(job: Job | null): boolean {
   return job?.state === "QUEUED" || job?.state === "RUNNING";
 }
 
+function metadataSourceAssetId(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const sourceAssetId = (value as Record<string, unknown>).source_asset_id;
+  return typeof sourceAssetId === "string" ? sourceAssetId : null;
+}
+
+function analysisSourceAssetId(asset: MediaAsset | null): string | null {
+  if (!asset) return null;
+  if (asset.type === "VIDEO") return asset.id;
+  return (
+    metadataSourceAssetId(asset.metadata.analysis) ??
+    metadataSourceAssetId(asset.metadata.shot_representative)
+  );
+}
+
 export function ProjectsWorkspace() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -74,6 +89,7 @@ export function ProjectsWorkspace() {
   const [error, setError] = useState<string | null>(null);
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
+  const cleanupSourceAssetId = analysisSourceAssetId(selectedAsset);
 
   async function refreshProjects(preferredProjectId?: string) {
     const nextProjects = await listProjects();
@@ -260,13 +276,13 @@ export function ProjectsWorkspace() {
   }
 
   async function handleClearAnalysisOutputs() {
-    if (!selectedAsset || selectedAsset.type !== "VIDEO" || !selectedProjectId) return;
+    if (!cleanupSourceAssetId || !selectedProjectId) return;
     if (isActiveJob(activeJob) || isClearingAnalysis) return;
     if (!window.confirm("Clear generated shot frames and analysis outputs for this video? The source video and extracted keyframes are kept.")) {
       return;
     }
 
-    const sourceAssetId = selectedAsset.id;
+    const sourceAssetId = cleanupSourceAssetId;
     setIsClearingAnalysis(true);
     setError(null);
     try {
@@ -509,17 +525,20 @@ export function ProjectsWorkspace() {
                 >
                   {isActiveJob(activeJob) && activeJob?.type === "keyframe-extraction" ? "Extracting keyframes…" : "Extract 8 keyframes"}
                 </button>
-                <button
-                  className="projectItem"
-                  disabled={isActiveJob(activeJob) || isClearingAnalysis}
-                  onClick={() => void handleClearAnalysisOutputs()}
-                  style={{ width: "100%" }}
-                  type="button"
-                >
-                  <strong>{isClearingAnalysis ? "Clearing analysis outputs…" : "Clear analysis outputs"}</strong>
-                  <span>Keep source video and extracted keyframes</span>
-                </button>
               </div>
+            ) : null}
+
+            {cleanupSourceAssetId ? (
+              <button
+                className="projectItem"
+                disabled={isActiveJob(activeJob) || isClearingAnalysis}
+                onClick={() => void handleClearAnalysisOutputs()}
+                style={{ marginTop: 8, width: "100%" }}
+                type="button"
+              >
+                <strong>{isClearingAnalysis ? "Clearing analysis outputs…" : "Clear analysis outputs"}</strong>
+                <span>Keep source video and extracted keyframes</span>
+              </button>
             ) : null}
 
             {activeJob && activeJob.input_asset_id === selectedAsset.id ? (
